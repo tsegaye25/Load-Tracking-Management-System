@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -34,6 +34,23 @@ const Layout = ({ children }) => {
   const { user } = useSelector((state) => state.auth);
   const navigate = useNavigate();
   const location = useLocation();
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
+  useEffect(() => {
+    if (user?.avatar) {
+      if (user.avatar.startsWith('data:') || user.avatar.startsWith('blob:')) {
+        setAvatarUrl(user.avatar);
+      } else {
+        const fullUrl = user.avatar.startsWith('http') 
+          ? user.avatar 
+          : `${baseURL}${user.avatar}`;
+        setAvatarUrl(fullUrl);
+      }
+    } else {
+      setAvatarUrl(`${baseURL}/uploads/profile-images/default-avatar.jpg`);
+    }
+  }, [user?.avatar, baseURL]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -107,7 +124,10 @@ const Layout = ({ children }) => {
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {menuItems.find((item) => item.path === location.pathname)?.text || 'LTMS'}
           </Typography>
-          <div>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle1" sx={{ display: { xs: 'none', sm: 'block' } }}>
+              {user?.name}
+            </Typography>
             <IconButton
               size="large"
               aria-label="account of current user"
@@ -116,7 +136,22 @@ const Layout = ({ children }) => {
               onClick={handleMenu}
               color="inherit"
             >
-              <Avatar>{user?.name?.charAt(0)}</Avatar>
+              <Avatar 
+                src={avatarUrl}
+                alt={user?.name}
+                sx={{ 
+                  width: 40, 
+                  height: 40,
+                  bgcolor: 'primary.main' 
+                }}
+                imgProps={{
+                  onError: () => {
+                    setAvatarUrl(`${baseURL}/uploads/profile-images/default-avatar.jpg`);
+                  }
+                }}
+              >
+                {user?.name?.charAt(0)}
+              </Avatar>
             </IconButton>
             <Menu
               id="menu-appbar"
@@ -134,6 +169,7 @@ const Layout = ({ children }) => {
               onClose={handleClose}
             >
               <MenuItem onClick={() => { handleClose(); navigate('/profile'); }}>
+                <Person sx={{ mr: 1 }} />
                 Profile
               </MenuItem>
               <MenuItem onClick={handleLogout}>
@@ -141,7 +177,7 @@ const Layout = ({ children }) => {
                 Logout
               </MenuItem>
             </Menu>
-          </div>
+          </Box>
         </Toolbar>
       </AppBar>
       <Box
