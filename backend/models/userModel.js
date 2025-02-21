@@ -51,9 +51,13 @@ const userSchema = new mongoose.Schema({
   },
   position: String,
   batchAdvisor: {
-    type: Boolean,
-    default: false
+    type: Number,
+    default: 0
   },
+  avatar: {
+    type: String,
+    default: 'default-avatar.jpg'
+},
   password: {
     type: String,
     required: [true, 'Please provide a password'],

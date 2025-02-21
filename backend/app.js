@@ -6,6 +6,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const AppError = require('./utils/appError');
 const userRoutes = require('./routes/userRoutes');
@@ -16,8 +17,18 @@ const app = express();
 // Enable CORS for all routes
 app.use(cors());
 
-// Set security HTTP headers
-app.use(helmet());
+// Set security HTTP headers with proper configuration for image serving
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "blob:", "http:", "https:"],
+      },
+    },
+  })
+);
 
 // Development logging
 if (process.env.NODE_ENV === 'development') {
@@ -43,7 +54,21 @@ app.use(mongoSanitize());
 app.use(xss());
 
 // Serve static files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads', 'profile-images');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Copy default avatar if it doesn't exist
+const defaultAvatarSrc = path.join(__dirname, 'public', 'default-avatar.jpg');
+const defaultAvatarDest = path.join(uploadsDir, 'default-avatar.jpg');
+if (!fs.existsSync(defaultAvatarDest) && fs.existsSync(defaultAvatarSrc)) {
+  fs.copyFileSync(defaultAvatarSrc, defaultAvatarDest);
+}
 
 // API Routes
 app.use('/api/v1/users', userRoutes);

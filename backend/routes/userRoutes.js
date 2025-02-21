@@ -1,23 +1,28 @@
 const express = require('express');
-const authController = require('../controllers/authController');
 const userController = require('../controllers/userController');
+const authController = require('../controllers/authController');
 
 const router = express.Router();
 
 // Public routes
+router.post('/signup', authController.signup);
 router.post('/login', authController.login);
 
 // Protect all routes after this middleware
 router.use(authController.protect);
 
 // Protected routes
-router.get('/me', userController.getMe, userController.getUser);
-router.patch('/updateMe', userController.updateMe);
+router.get('/me', userController.getMe);
+router.patch(
+  '/updateMe',
+  userController.uploadUserPhoto,
+  userController.resizeUserPhoto,
+  userController.updateMe
+);
 router.get('/instructors', userController.getInstructors);
 
 // Admin only routes
 router.use(authController.restrictTo('admin'));
-router.post('/signup', authController.signup); 
 router
   .route('/')
   .get(userController.getAllUsers)

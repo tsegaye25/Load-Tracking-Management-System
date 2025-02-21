@@ -95,11 +95,11 @@ const courseSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  BranchAdvisor: {
+  branchAdvisor: {
     type: Number,
     default: 0
   },
-  Sum: {
+  sum: {
     type: Number,
     default: 0
   },
