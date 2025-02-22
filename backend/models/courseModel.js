@@ -40,7 +40,7 @@ const courseSchema = new mongoose.Schema({
             'Tourism and Hotel Management'
           ]
         };
-        return departments[this.school]?.includes(dept) || true; // Allow other departments for other schools
+        return departments[this.school]?.includes(dept) || true;
       },
       message: 'Invalid department for the selected school'
     }
@@ -99,44 +99,40 @@ const courseSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  sum: {
-    type: Number,
-    default: 0
-  },
   instructor: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'User'
+  },
+  requestedBy: {
     type: mongoose.Schema.ObjectId,
     ref: 'User'
   },
   status: {
     type: String,
-    enum: ['unassigned', 'pending', 'approved', 'rejected'],
+    enum: ['pending', 'approved', 'rejected', 'unassigned'],
     default: 'unassigned'
   },
-  approvalFlow: {
-    departmentHead: {
-      approved: { type: Boolean, default: false },
-      date: Date,
-      remarks: String
+  approvalHistory: [{
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected']
     },
-    schoolDean: {
-      approved: { type: Boolean, default: false },
-      date: Date,
-      remarks: String
+    approver: {
+      type: mongoose.Schema.ObjectId,
+      ref: 'User'
     },
-    viceScientificDirector: {
-      approved: { type: Boolean, default: false },
-      date: Date,
-      remarks: String
-    },
-    scientificDirector: {
-      approved: { type: Boolean, default: false },
-      date: Date,
-      remarks: String
-    },
-    finance: {
-      approved: { type: Boolean, default: false },
-      date: Date,
-      remarks: String
+    role: String,
+    comment: String,
+    date: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  totalHours: {
+    type: Number,
+    default: function() {
+      const hours = this.Hourfor;
+      return (hours.creaditHours || 0) + (hours.lecture || 0) + (hours.lab || 0) + (hours.tutorial || 0);
     }
   }
 }, {
@@ -145,43 +141,16 @@ const courseSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Calculate total load before saving
-courseSchema.pre('save', function(next) {
-  // Calculate lecture load
-  const lectureLoad = this.Hourfor.lecture * this.Number_of_Sections.lecture;
-  
-  // Calculate lab load
-  const labLoad = this.Hourfor.lab * this.Number_of_Sections.lab;
-  
-  // Calculate tutorial load
-  const tutorialLoad = this.Hourfor.tutorial * this.Number_of_Sections.tutorial;
-  
-  // Calculate additional loads
-  const hdpLoad = this.hdp || 0;
-  const positionLoad = this.position || 0;
-  const branchAdvisorLoad = this.BranchAdvisor || 0;
-  
-  // Set total load
-  this.totalLoad = lectureLoad + labLoad + tutorialLoad + hdpLoad + positionLoad + branchAdvisorLoad;
-  
-  next();
-});
-
-// Add totalLoad to schema
-courseSchema.add({
-  totalLoad: {
-    type: Number,
-    default: 0
-  }
-});
-
+// Middleware to populate instructor details
 courseSchema.pre(/^find/, function(next) {
   this.populate({
     path: 'instructor',
+    select: 'name email department school'
+  }).populate({
+    path: 'requestedBy',
     select: 'name email department'
   });
   next();
 });
 
-const Course = mongoose.model('Course', courseSchema);
-module.exports = Course;
+module.exports = mongoose.model('Course', courseSchema);

@@ -19,7 +19,16 @@ import { fetchCourses, createCourse, assignCourse, deleteCourse, updateCourseByI
 import { getInstructors } from '../../store/authSlice';
 import { toast } from 'react-toastify';
 
-const CourseCard = ({ course, onEdit, onDelete, onAssign, isAdmin }) => {
+const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprove, onReject, isAdmin, isInstructor, isDepartmentHead }) => {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'approved': return 'success';
+      case 'pending': return 'warning';
+      case 'rejected': return 'error';
+      default: return 'default';
+    }
+  };
+
   return (
     <Accordion>
       <AccordionSummary
@@ -42,32 +51,84 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, isAdmin }) => {
               {course.school} | {course.department}
             </Typography>
           </Box>
-          {course.instructor && (
-            <Chip
-              label={`Instructor: ${course.instructor.name}`}
-              color="primary"
+          <Stack direction="row" spacing={1}>
+            {course.status !== 'unassigned' && (
+              <Chip
+                label={`Status: ${course.status}`}
+                color={getStatusColor(course.status)}
+                size="small"
+              />
+            )}
+            {course.instructor && (
+              <Chip
+                label={`Instructor: ${course.instructor.name}`}
+                color="primary"
+                variant="outlined"
+                size="small"
+              />
+            )}
+            {isDepartmentHead && course.status === 'pending' && course.requestedBy && (
+              <Chip
+                label={`Requested by: ${course.requestedBy.name}`}
+                color="info"
+                variant="outlined"
+                size="small"
+              />
+            )}
+          </Stack>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {isAdmin && (
+            <>
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit(course); }}>
+                <EditIcon />
+              </IconButton>
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onDelete(course._id); }}>
+                <DeleteIcon />
+              </IconButton>
+              <IconButton 
+                size="small" 
+                onClick={(e) => { e.stopPropagation(); onAssign(course); }}
+                color={course.instructor ? "success" : "default"}
+              >
+                <AssignmentIndIcon />
+              </IconButton>
+            </>
+          )}
+          {isInstructor && course.status === 'unassigned' && (
+            <Button
               variant="outlined"
               size="small"
-            />
+              startIcon={<AssignmentIndIcon />}
+              onClick={(e) => { e.stopPropagation(); onSelfAssign(course._id); }}
+              sx={{ ml: 1 }}
+            >
+              Select Course
+            </Button>
+          )}
+          {isDepartmentHead && course.status === 'pending' && (
+            <>
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                onClick={(e) => { e.stopPropagation(); onApprove(course._id); }}
+                sx={{ ml: 1 }}
+              >
+                Approve
+              </Button>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                onClick={(e) => { e.stopPropagation(); onReject(course._id); }}
+                sx={{ ml: 1 }}
+              >
+                Reject
+              </Button>
+            </>
           )}
         </Box>
-        {isAdmin && (
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit(course); }}>
-              <EditIcon />
-            </IconButton>
-            <IconButton size="small" onClick={(e) => { e.stopPropagation(); onDelete(course._id); }}>
-              <DeleteIcon />
-            </IconButton>
-            <IconButton 
-              size="small" 
-              onClick={(e) => { e.stopPropagation(); onAssign(course); }}
-              color={course.instructor ? "success" : "default"}
-            >
-              <AssignmentIndIcon />
-            </IconButton>
-          </Box>
-        )}
       </AccordionSummary>
       <AccordionDetails>
         <Grid container spacing={3}>
@@ -100,6 +161,27 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, isAdmin }) => {
                   <Typography variant="body2">
                     <strong>Department:</strong> {course.instructor.department}
                   </Typography>
+                </>
+              )}
+              {isDepartmentHead && course.status === 'pending' && course.requestedBy && (
+                <>
+                  <Typography variant="subtitle2" color="primary" sx={{ mt: 2, mb: 1 }}>
+                    Request Information
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Requested By:</strong> {course.requestedBy.name}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Instructor Email:</strong> {course.requestedBy.email}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Department:</strong> {course.requestedBy.department}
+                  </Typography>
+                  {course.approvalHistory && course.approvalHistory.length > 0 && (
+                    <Typography variant="body2">
+                      <strong>Requested On:</strong> {new Date(course.approvalHistory[0].date).toLocaleDateString()}
+                    </Typography>
+                  )}
                 </>
               )}
             </Box>
@@ -406,6 +488,93 @@ const Courses = () => {
     }
   };
 
+  const handleSelfAssign = async (courseId) => {
+    try {
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(`${baseURL}/api/v1/courses/${courseId}/self-assign`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to assign course');
+      }
+
+      toast.success('Course assigned successfully');
+      dispatch(fetchCourses());
+    } catch (error) {
+      toast.error(error.message || 'An error occurred while assigning the course');
+      console.error('Error assigning course:', error);
+    }
+  };
+
+  const handleApprove = async (courseId) => {
+    try {
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(`${baseURL}/api/v1/courses/${courseId}/approve-assignment`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          comment: 'Course assignment approved by department head'
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to approve course');
+      }
+
+      toast.success('Course assignment approved successfully');
+      dispatch(fetchCourses());
+    } catch (error) {
+      toast.error(error.message || 'An error occurred while approving the course');
+      console.error('Error approving course:', error);
+    }
+  };
+
+  const handleReject = async (courseId) => {
+    try {
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(`${baseURL}/api/v1/courses/${courseId}/reject-assignment`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          comment: 'Course assignment rejected by department head'
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to reject course');
+      }
+
+      toast.success('Course assignment rejected successfully');
+      dispatch(fetchCourses());
+    } catch (error) {
+      toast.error(error.message || 'An error occurred while rejecting the course');
+      console.error('Error rejecting course:', error);
+    }
+  };
+
   const handleEdit = (course) => {
     setSelectedCourse(course);
     formik.setValues({
@@ -438,13 +607,17 @@ const Courses = () => {
     setFilterValue(event.target.value);
   };
 
+  const isAdmin = user?.role === 'admin';
+  const isInstructor = user?.role === 'instructor';
+  const isDepartmentHead = user?.role === 'department-head';
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h4" component="h1">
           Courses Management
         </Typography>
-        {user?.role === 'admin' && (
+        {isAdmin && (
           <Button
             variant="contained"
             color="primary"
@@ -478,7 +651,7 @@ const Courses = () => {
         >
           Filters
         </Button>
-        {user?.role === 'admin' && (
+        {isAdmin && (
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -605,20 +778,15 @@ const Courses = () => {
               <Grid item xs={12} key={course._id}>
                 <CourseCard
                   course={course}
-                  onEdit={(course) => {
-                    setSelectedCourse(course);
-                    setOpenDialog(true);
-                  }}
-                  onDelete={(id) => {
-                    if (window.confirm('Are you sure you want to delete this course?')) {
-                      dispatch(deleteCourse(id));
-                    }
-                  }}
-                  onAssign={(course) => {
-                    setSelectedCourse(course);
-                    setOpenAssignDialog(true);
-                  }}
-                  isAdmin={user?.role === 'admin'}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onAssign={handleAssignCourse}
+                  onSelfAssign={handleSelfAssign}
+                  onApprove={handleApprove}
+                  onReject={handleReject}
+                  isAdmin={isAdmin}
+                  isInstructor={isInstructor}
+                  isDepartmentHead={isDepartmentHead}
                 />
               </Grid>
             ))}

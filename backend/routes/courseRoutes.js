@@ -8,9 +8,29 @@ const router = express.Router();
 router.use(authController.protect);
 
 // Routes accessible by both admin and instructors
-router.get('/', authController.restrictTo('admin', 'instructor'), courseController.getAllCourses);
+router.get('/', authController.restrictTo('admin', 'instructor', 'department-head'), courseController.getAllCourses);
 router.get('/my-courses', courseController.getMyCourses);
-router.get('/:id', authController.restrictTo('admin', 'instructor'), courseController.getCourse);
+router.get('/:id', authController.restrictTo('admin', 'instructor', 'department-head'), courseController.getCourse);
+
+// Allow instructors to self-assign courses
+router.patch(
+  '/:id/self-assign',
+  authController.restrictTo('instructor'),
+  courseController.selfAssignCourse
+);
+
+// Course assignment approval routes
+router.patch(
+  '/:id/approve-assignment',
+  authController.restrictTo('department-head'),
+  courseController.approveCourseAssignment
+);
+
+router.patch(
+  '/:id/reject-assignment',
+  authController.restrictTo('department-head'),
+  courseController.rejectCourseAssignment
+);
 
 // Routes accessible only by admin
 router.use(authController.restrictTo('admin'));

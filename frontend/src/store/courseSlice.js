@@ -2,6 +2,8 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
+const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
 const initialState = {
   courses: [],
   myCourses: [],
@@ -15,8 +17,8 @@ export const fetchCourses = createAsyncThunk(
   'courses/fetchCourses',
   async (_, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('jwt');
-      const response = await axios.get('http://localhost:5000/api/v1/courses', {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${baseURL}/api/v1/courses`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -37,8 +39,8 @@ export const getMyCourses = createAsyncThunk(
   'courses/getMyCourses',
   async (_, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('jwt');
-      const response = await axios.get('http://localhost:5000/api/v1/courses/my-courses', {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${baseURL}/api/v1/courses/my-courses`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -55,7 +57,7 @@ export const createCourse = createAsyncThunk(
   'courses/createCourse',
   async (courseData, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('jwt');
+      const token = localStorage.getItem('token');
       const processedData = {
         ...courseData,
         Hourfor: {
@@ -73,7 +75,7 @@ export const createCourse = createAsyncThunk(
         position: Number(courseData.position),
         BranchAdvisor: Number(courseData.BranchAdvisor)
       };
-      const response = await axios.post('http://localhost:5000/api/v1/courses', processedData, {
+      const response = await axios.post(`${baseURL}/api/v1/courses`, processedData, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -91,8 +93,8 @@ export const assignCourse = createAsyncThunk(
   'courses/assignCourse',
   async ({ courseId, instructorId }, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('jwt');
-      const response = await axios.patch(`http://localhost:5000/api/v1/courses/${courseId}/assign`, {
+      const token = localStorage.getItem('token');
+      const response = await axios.patch(`${baseURL}/api/v1/courses/${courseId}/assign`, {
         instructorId
       }, {
         headers: {
@@ -111,8 +113,8 @@ export const deleteCourse = createAsyncThunk(
   'courses/deleteCourse',
   async (courseId, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('jwt');
-      const response = await axios.delete(`http://localhost:5000/api/v1/courses/${courseId}`, {
+      const token = localStorage.getItem('token');
+      const response = await axios.delete(`${baseURL}/api/v1/courses/${courseId}`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -129,8 +131,8 @@ export const updateCourseById = createAsyncThunk(
   'courses/updateCourseById',
   async ({ id, courseData }, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('jwt');
-      const response = await axios.patch(`http://localhost:5000/api/v1/courses/${id}`, courseData, {
+      const token = localStorage.getItem('token');
+      const response = await axios.patch(`${baseURL}/api/v1/courses/${id}`, courseData, {
         headers: {
           Authorization: `Bearer ${token}`
         }
