@@ -13,6 +13,10 @@ exports.getAllCourses = catchAsync(async (req, res, next) => {
     query = query.where('school').equals(req.user.school);
   }
 
+  if (req.user.role === 'department-head') {
+    query = query.where('school').equals(req.user.school);
+  }
+
   // Populate instructor and requestedBy details
   query = query.populate({
     path: 'instructor',
@@ -130,25 +134,17 @@ exports.getMyCourses = catchAsync(async (req, res, next) => {
 
 exports.assignCourse = catchAsync(async (req, res, next) => {
   const course = await Course.findById(req.params.id);
-  if (!course) {
+  if (!course ) {
     return next(new AppError('No course found with that ID', 404));
   }
 
   const instructor = await User.findById(req.body.instructorId);
-  if (!instructor) {
+  if (!instructor || instructor.role !== 'instructor') {
     return next(new AppError('No instructor found with that ID', 404));
   }
 
   if (instructor.role !== 'instructor') {
     return next(new AppError('Selected user is not an instructor', 400));
-  }
-
-  // Check if instructor's current load would exceed maximum
-  const maxLoad = 12; // Maximum allowed load
-  const newLoad = instructor.currentLoad + (course.totalHours || 0);
-  
-  if (newLoad > maxLoad) {
-    return next(new AppError(`Assignment would exceed instructor's maximum load of ${maxLoad} hours`, 400));
   }
 
   // Update course with new instructor
@@ -161,7 +157,7 @@ exports.assignCourse = catchAsync(async (req, res, next) => {
       instructor._id,
       {
         $push: { courses: course._id },
-        $set: { currentLoad: newLoad }
+        $set: { currentLoad: instructor.currentLoad + (course.totalHours || 0) }
       },
       { new: true, runValidators: false }
     );
@@ -203,27 +199,6 @@ exports.selfAssignCourse = catchAsync(async (req, res, next) => {
     return next(new AppError('You can only select courses from your school', 403));
   }
 
-  // Check if course is from instructor's department
-  if (course.department !== req.user.department) {
-    return next(new AppError('You can only select courses from your department', 403));
-  }
-
-  // Calculate instructor's current load
-  const currentCourses = await Course.find({ 
-    instructor: req.user._id,
-    status: 'approved'
-  });
-  const currentLoad = currentCourses.reduce((total, course) => total + (course.totalHours || 0), 0);
-  
-  // Calculate new course load
-  const newCourseLoad = course.totalHours || 0;
-  
-  // Check if adding this course would exceed maximum load (e.g., 12 hours)
-  const MAX_LOAD = 12;
-  if (currentLoad + newCourseLoad > MAX_LOAD) {
-    return next(new AppError(`Cannot assign course. It would exceed your maximum teaching load of ${MAX_LOAD} hours`, 400));
-  }
-
   // Update course status to pending and store the requesting instructor
   course.status = 'pending';
   course.requestedBy = req.user._id;
@@ -236,10 +211,10 @@ exports.selfAssignCourse = catchAsync(async (req, res, next) => {
 
   await course.save();
 
-  // Find department head
+  // Find department head of the course's department
   const departmentHead = await User.findOne({
-    department: req.user.department,
-    school: req.user.school,
+    department: course.department,
+    school: course.school,
     role: 'department-head'
   });
 
@@ -251,8 +226,9 @@ exports.selfAssignCourse = catchAsync(async (req, res, next) => {
         subject: 'Course Assignment Request Pending Approval',
         message: `A new course assignment request requires your approval:\n\n` +
                 `Course: ${course.code} - ${course.title}\n` +
+                `Course Department: ${course.department}\n` +
                 `Instructor: ${req.user.name}\n` +
-                `Department: ${course.department}\n\n` +
+                `Instructor Department: ${req.user.department}\n\n` +
                 `Please review this request in the LTMS system.`
       });
     } catch (err) {
@@ -270,7 +246,16 @@ exports.selfAssignCourse = catchAsync(async (req, res, next) => {
 });
 
 exports.approveCourseAssignment = catchAsync(async (req, res, next) => {
-  const course = await Course.findById(req.params.id);
+  const course = await Course.findById(req.params.id)
+    .populate({
+      path: 'instructor',
+      select: 'name email department school'
+    })
+    .populate({
+      path: 'requestedBy',
+      select: 'name email department school'
+    });
+
   if (!course) {
     return next(new AppError('No course found with that ID', 404));
   }
@@ -285,6 +270,20 @@ exports.approveCourseAssignment = catchAsync(async (req, res, next) => {
       req.user.department !== course.department || 
       req.user.school !== course.school) {
     return next(new AppError('You are not authorized to approve this request', 403));
+  }
+
+  // Check if course is already assigned to another instructor
+  const existingAssignment = await Course.findOne({
+    _id: { $ne: course._id }, // exclude current course
+    instructor: { $exists: true, $ne: null },
+    code: course.code,
+    semester: course.semester,
+    classYear: course.classYear,
+    status: 'approved'
+  });
+
+  if (existingAssignment) {
+    return next(new AppError('This course is already assigned to another instructor for this semester', 400));
   }
 
   // Update course status and assign instructor

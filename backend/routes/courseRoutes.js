@@ -33,7 +33,7 @@ router.patch(
 );
 
 // Routes accessible only by admin
-router.use(authController.restrictTo('admin'));
+router.use(authController.restrictTo('department-head', 'admin'));
 router.post('/', courseController.createCourse);
 router.patch('/:id', courseController.updateCourse);
 router.delete('/:id', courseController.deleteCourse);

@@ -57,7 +57,7 @@ const userSchema = new mongoose.Schema({
   avatar: {
     type: String,
     default: 'default-avatar.jpg'
-},
+  },
   password: {
     type: String,
     required: [true, 'Please provide a password'],
