@@ -11,6 +11,7 @@ const fs = require('fs');
 const AppError = require('./utils/appError');
 const userRoutes = require('./routes/userRoutes');
 const courseRoutes = require('./routes/courseRoutes');
+const feedbackRoutes = require('./routes/feedbackRoutes');
 
 const app = express();
 
@@ -73,6 +74,7 @@ if (!fs.existsSync(defaultAvatarDest) && fs.existsSync(defaultAvatarSrc)) {
 // API Routes
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/courses', courseRoutes);
+app.use('/api/v1/feedbacks', feedbackRoutes);
 
 // Handle undefined routes
 app.all('*', (req, res, next) => {

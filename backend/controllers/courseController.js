@@ -17,6 +17,8 @@ exports.getAllCourses = catchAsync(async (req, res, next) => {
     query = query.where('school').equals(req.user.school);
   }
 
+
+
   // Populate instructor and requestedBy details
   query = query.populate({
     path: 'instructor',
@@ -74,35 +76,57 @@ exports.createCourse = catchAsync(async (req, res, next) => {
 });
 
 exports.updateCourse = catchAsync(async (req, res, next) => {
-  const course = await Course.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true
-  });
-
+  const course = await Course.findById(req.params.id);
+  
   if (!course) {
     return next(new AppError('No course found with that ID', 404));
   }
 
+  // Check department head permission
+  await checkDepartmentHeadPermission(req, course);
+
+  // Only allow certain roles to update courses
+  if (!['admin', 'department-head'].includes(req.user.role)) {
+    return next(new AppError('You do not have permission to update courses', 403));
+  }
+
+  const updatedCourse = await Course.findByIdAndUpdate(
+    req.params.id,
+    req.body,
+    {
+      new: true,
+      runValidators: true
+    }
+  );
+
   res.status(200).json({
     status: 'success',
     data: {
-      course
+      course: updatedCourse
     }
   });
 });
 
 exports.deleteCourse = catchAsync(async (req, res, next) => {
-  const course = await Course.findByIdAndDelete(req.params.id);
-
+  const course = await Course.findById(req.params.id);
+  
   if (!course) {
     return next(new AppError('No course found with that ID', 404));
   }
 
-  res.status(200).json({
+  // Check department head permission
+  await checkDepartmentHeadPermission(req, course);
+
+  // Only allow certain roles to delete courses
+  if (!['admin', 'department-head'].includes(req.user.role)) {
+    return next(new AppError('You do not have permission to delete courses', 403));
+  }
+
+  await Course.findByIdAndDelete(req.params.id);
+
+  res.status(204).json({
     status: 'success',
-    data: {
-      courseId: req.params.id
-    }
+    data: null
   });
 });
 
@@ -133,51 +157,39 @@ exports.getMyCourses = catchAsync(async (req, res, next) => {
 });
 
 exports.assignCourse = catchAsync(async (req, res, next) => {
-  const course = await Course.findById(req.params.id);
-  if (!course ) {
-    return next(new AppError('No course found with that ID', 404));
+  const { instructorId } = req.body;
+  const courseId = req.params.id;
+
+  // Check if course exists
+  const course = await Course.findById(courseId);
+  if (!course) {
+    return next(new AppError('Course not found', 404));
   }
 
-  const instructor = await User.findById(req.body.instructorId);
+  // Check if instructor exists
+  const instructor = await User.findById(instructorId);
   if (!instructor || instructor.role !== 'instructor') {
-    return next(new AppError('No instructor found with that ID', 404));
+    return next(new AppError('Invalid instructor', 400));
   }
 
-  if (instructor.role !== 'instructor') {
-    return next(new AppError('Selected user is not an instructor', 400));
+  // Check if course is already assigned
+  if (course.instructor) {
+    return next(new AppError('Course is already assigned to an instructor', 400));
   }
 
-  // Update course with new instructor
-  course.instructor = instructor._id;
+  // If user is department head, ensure they can only assign courses from their department
+  if (req.user.role === 'department-head' && course.department !== req.user.department) {
+    return next(new AppError('You can only assign courses from your department', 403));
+  }
+
+  // Assign the course
+  course.instructor = instructorId;
   await course.save();
-
-  // Update instructor's courses and load using findByIdAndUpdate to skip validation
-  if (!instructor.courses.includes(course._id)) {
-    await User.findByIdAndUpdate(
-      instructor._id,
-      {
-        $push: { courses: course._id },
-        $set: { currentLoad: instructor.currentLoad + (course.totalHours || 0) }
-      },
-      { new: true, runValidators: false }
-    );
-  }
-
-  // Get fully populated course data
-  const populatedCourse = await Course.findById(course._id)
-    .populate({
-      path: 'instructor',
-      select: 'name email department school currentLoad'
-    })
-    .populate({
-      path: 'requestedBy',
-      select: 'name email department school'
-    });
 
   res.status(200).json({
     status: 'success',
     data: {
-      course: populatedCourse
+      course
     }
   });
 });
@@ -461,4 +473,12 @@ const getApprovalField = (role) => {
     'finance': 'finance'
   };
   return roleMap[role];
+};
+
+const checkDepartmentHeadPermission = async (req, course) => {
+  if (req.user.role === 'department-head') {
+    if (course.department !== req.user.department || course.school !== req.user.school) {
+      throw new AppError('You do not have permission to manage courses outside your department', 403);
+    }
+  }
 };

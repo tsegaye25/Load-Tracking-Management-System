@@ -19,7 +19,20 @@ import { fetchCourses, createCourse, assignCourse, deleteCourse, updateCourseByI
 import { getInstructors } from '../../store/authSlice';
 import { toast } from 'react-toastify';
 
-const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprove, onReject, isAdmin, isInstructor, isDepartmentHead }) => {
+const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprove, onReject }) => {
+  const { user } = useSelector((state) => state.auth);
+  const isAdmin = user?.role === 'admin';
+  const isDepartmentHead = user?.role === 'department-head';
+  const isInstructor = user?.role === 'instructor';
+
+  // Check if the course is from the department head's department
+  const isFromDepartmentHeadDepartment = isDepartmentHead && 
+    course.department === user.department &&
+    course.school === user.school;
+
+  // Check if course is unassigned
+  const isUnassigned = !course.instructor;
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'approved': return 'success';
@@ -78,24 +91,51 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
           </Stack>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          {isAdmin && (
+          {(isAdmin || isFromDepartmentHeadDepartment) && (
             <>
-              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit(course); }}>
+              <IconButton 
+                size="small" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(course);
+                }}
+                color="primary"
+              >
                 <EditIcon />
-              </IconButton>
-              <IconButton size="small" onClick={(e) => { e.stopPropagation(); onDelete(course._id); }}>
-                <DeleteIcon />
               </IconButton>
               <IconButton 
                 size="small" 
-                onClick={(e) => { e.stopPropagation(); onAssign(course); }}
-                color={course.instructor ? "success" : "default"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(course._id);
+                }}
+                color="error"
               >
-                <AssignmentIndIcon />
+                <DeleteIcon />
               </IconButton>
             </>
           )}
-          {isInstructor && course.status === 'unassigned' && (
+          {isAdmin && (
+            <IconButton 
+              size="small" 
+              onClick={(e) => { e.stopPropagation(); onAssign(course); }}
+              color={course.instructor ? "success" : "default"}
+            >
+              <AssignmentIndIcon />
+            </IconButton>
+          )}
+          {isDepartmentHead && isFromDepartmentHeadDepartment && isUnassigned && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<AssignmentIndIcon />}
+              onClick={(e) => { e.stopPropagation(); onAssign(course); }}
+              sx={{ ml: 1 }}
+            >
+              Assign
+            </Button>
+          )}
+          {isInstructor && isUnassigned && (
             <Button
               variant="outlined"
               size="small"
@@ -103,7 +143,7 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
               onClick={(e) => { e.stopPropagation(); onSelfAssign(course._id); }}
               sx={{ ml: 1 }}
             >
-              Select Course
+              Self-Assign
             </Button>
           )}
           {isDepartmentHead && course.status === 'pending' && (
@@ -282,12 +322,13 @@ const Courses = () => {
   const { courses, loading } = useSelector((state) => state.course);
   const { user } = useSelector((state) => state.auth);
   const [openDialog, setOpenDialog] = useState(false);
+  const [openAssignDialog, setOpenAssignDialog] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState(null);
+  const [selectedInstructor, setSelectedInstructor] = useState('');
+  const [instructors, setInstructors] = useState([]);
+  const [loadingInstructors, setLoadingInstructors] = useState(false);
   const [filteredCourses, setFilteredCourses] = useState([]);
   const [filterValue, setFilterValue] = useState('');
-  const [instructors, setInstructors] = useState([]);
-  const [openAssignDialog, setOpenAssignDialog] = useState(false);
-  const [selectedInstructor, setSelectedInstructor] = useState('');
   const [selectedSchool, setSelectedSchool] = useState(null);
   
   // Pagination states
@@ -446,6 +487,11 @@ const Courses = () => {
           await dispatch(updateCourseById({ id: selectedCourse._id, courseData: values }));
           toast.success('Course updated successfully!');
         } else {
+          // For department heads, automatically set school and department
+          if (user?.role === 'department-head') {
+            values.school = user.school;
+            values.department = user.department;
+          }
           await dispatch(createCourse(values));
           toast.success('Course created successfully!');
         }
@@ -461,30 +507,84 @@ const Courses = () => {
   const classYears = ['First', 'Second', 'Third', 'Fourth', 'Fifth'];
   const semesters = ['First', 'Second'];
 
-  const handleAssignCourse = (course) => {
+  const fetchInstructors = async () => {
+    try {
+      setLoadingInstructors(true);
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/v1/users/instructors`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch instructors');
+      }
+
+      if (data.status === 'success' && Array.isArray(data.data.instructors)) {
+        // Filter instructors based on school if user is department head
+        const availableInstructors = user?.role === 'department-head'
+          ? data.data.instructors.filter(instructor => 
+              instructor.school === user.school && 
+              instructor.role === 'instructor')
+          : data.data.instructors;
+
+        console.log('Available instructors:', availableInstructors); // Debug log
+        setInstructors(availableInstructors);
+      } else {
+        console.error('Invalid instructors data:', data); // Debug log
+        setInstructors([]);
+      }
+    } catch (error) {
+      console.error('Error fetching instructors:', error);
+      toast.error(error.message || 'Failed to fetch instructors');
+      setInstructors([]);
+    } finally {
+      setLoadingInstructors(false);
+    }
+  };
+
+  useEffect(() => {
+    if ((user?.role === 'admin' || user?.role === 'department-head') && openAssignDialog) {
+      fetchInstructors();
+    }
+  }, [user, openAssignDialog]);
+
+  const handleAssignClick = (course) => {
     setSelectedCourse(course);
     setSelectedInstructor('');
     setOpenAssignDialog(true);
   };
 
-  const handleAssignSubmit = async () => {
-    if (!selectedInstructor) {
-      toast.error('Please select an instructor');
-      return;
-    }
-
+  const handleAssignCourse = async () => {
     try {
-      await dispatch(assignCourse({
-        courseId: selectedCourse._id,
-        instructorId: selectedInstructor
-      }));
-      setOpenAssignDialog(false);
-      setSelectedInstructor('');
-      dispatch(fetchCourses()); // Refresh courses list
+      setLoadingInstructors(true); // Using the existing loading state for instructors
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/v1/courses/${selectedCourse._id}/assign`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ instructorId: selectedInstructor })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to assign course');
+      }
+
       toast.success('Course assigned successfully');
+      setOpenAssignDialog(false);
+      dispatch(fetchCourses());
     } catch (error) {
-      console.error('Failed to assign course:', error);
-      toast.error(error.response?.data?.message || 'Failed to assign course');
+      console.error('Error assigning course:', error);
+      toast.error(error.message || 'Failed to assign course');
+    } finally {
+      setLoadingInstructors(false); // Using the existing loading state for instructors
     }
   };
 
@@ -611,23 +711,145 @@ const Courses = () => {
   const isInstructor = user?.role === 'instructor';
   const isDepartmentHead = user?.role === 'department-head';
 
+  const AssignmentDialog = () => {
+    const hasInstructors = Array.isArray(instructors) && instructors.length > 0;
+    
+    return (
+      <Dialog open={openAssignDialog} onClose={() => setOpenAssignDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Assign Course: {selectedCourse?.code} - {selectedCourse?.title}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Box sx={{ mb: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+              <Typography variant="subtitle2" color="primary" gutterBottom>
+                Course Details
+              </Typography>
+              <Typography variant="body2" gutterBottom>
+                <strong>Department:</strong> {selectedCourse?.department}
+              </Typography>
+              <Typography variant="body2" gutterBottom>
+                <strong>School:</strong> {selectedCourse?.school}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Total Hours:</strong> {selectedCourse?.totalHours}
+              </Typography>
+            </Box>
+            
+            <FormControl fullWidth>
+              <InputLabel id="instructor-select-label">Select Instructor</InputLabel>
+              <Select
+                labelId="instructor-select-label"
+                id="instructor-select"
+                value={selectedInstructor}
+                onChange={(e) => setSelectedInstructor(e.target.value)}
+                label="Select Instructor"
+                disabled={loadingInstructors}
+              >
+                {loadingInstructors && (
+                  <MenuItem value="" disabled>
+                    <Box sx={{ display: 'flex', alignItems: 'center', py: 1 }}>
+                      <CircularProgress size={20} sx={{ mr: 2 }} />
+                      Loading instructors...
+                    </Box>
+                  </MenuItem>
+                )}
+                
+                {!loadingInstructors && !hasInstructors && (
+                  <MenuItem value="" disabled>
+                    <Box sx={{ py: 1 }}>
+                      <Typography color="text.secondary">
+                        No instructors available in {user.school}
+                      </Typography>
+                    </Box>
+                  </MenuItem>
+                )}
+                
+                {!loadingInstructors && hasInstructors && (
+                  <MenuItem value="">
+                    <Box sx={{ py: 1 }}>
+                      <Typography color="text.secondary">
+                        <em>Select an instructor ({instructors.length} available)</em>
+                      </Typography>
+                    </Box>
+                  </MenuItem>
+                )}
+                
+                {!loadingInstructors && hasInstructors && 
+                  instructors.map((instructor) => (
+                    <MenuItem 
+                      key={instructor._id} 
+                      value={instructor._id}
+                    >
+                      <Box sx={{ py: 1 }}>
+                        <Typography variant="subtitle2">
+                          {instructor.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {instructor.department} • {instructor.school}
+                        </Typography>
+                      </Box>
+                    </MenuItem>
+                  ))
+                }
+              </Select>
+              <FormHelperText>
+                {loadingInstructors 
+                  ? 'Loading instructors...' 
+                  : !hasInstructors
+                    ? `No instructors available in ${user.school}`
+                    : `${instructors.length} instructor${instructors.length === 1 ? '' : 's'} available in ${user.school}`}
+              </FormHelperText>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button 
+            onClick={() => setOpenAssignDialog(false)}
+            variant="outlined"
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleAssignCourse} 
+            variant="contained" 
+            color="primary"
+            disabled={!selectedInstructor || loadingInstructors}
+            startIcon={loadingInstructors ? <CircularProgress size={20} /> : <AssignmentIndIcon />}
+          >
+            {loadingInstructors ? 'Loading...' : 'Assign Course'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h4" component="h1">
           Courses Management
         </Typography>
-        {isAdmin && (
+        {(isDepartmentHead) && (
           <Button
             variant="contained"
             color="primary"
             startIcon={<AddIcon />}
             onClick={() => {
               setSelectedCourse(null);
+              formik.resetForm();
+              // Pre-fill school and department for department heads
+              if (isDepartmentHead) {
+                formik.setValues({
+                  ...formik.initialValues,
+                  school: user.school,
+                  department: user.department
+                });
+              }
               setOpenDialog(true);
             }}
           >
-            Add New Course
+            Add Course
           </Button>
         )}
       </Box>
@@ -651,18 +873,6 @@ const Courses = () => {
         >
           Filters
         </Button>
-        {isAdmin && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              setSelectedCourse(null);
-              setOpenDialog(true);
-            }}
-          >
-            Add Course
-          </Button>
-        )}
       </Box>
 
       {/* Filter Dialog */}
@@ -780,13 +990,10 @@ const Courses = () => {
                   course={course}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
-                  onAssign={handleAssignCourse}
+                  onAssign={handleAssignClick}
                   onSelfAssign={handleSelfAssign}
                   onApprove={handleApprove}
                   onReject={handleReject}
-                  isAdmin={isAdmin}
-                  isInstructor={isInstructor}
-                  isDepartmentHead={isDepartmentHead}
                 />
               </Grid>
             ))}
@@ -820,13 +1027,13 @@ const Courses = () => {
       {/* Course Form Dialog */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle>
-          {selectedCourse ? 'Edit Course' : 'Add New Course'}
+          {selectedCourse ? 'Edit Course' : 'Add Course'}
         </DialogTitle>
         <form onSubmit={formik.handleSubmit}>
           <DialogContent>
             <Grid container spacing={3}>
               {/* Basic Information */}
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
                   label="Course Title"
@@ -837,7 +1044,7 @@ const Courses = () => {
                   helperText={formik.touched.title && formik.errors.title}
                 />
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
                   label="Course Code"
@@ -848,7 +1055,7 @@ const Courses = () => {
                   helperText={formik.touched.code && formik.errors.code}
                 />
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <FormControl fullWidth>
                   <InputLabel>School</InputLabel>
                   <Select
@@ -859,6 +1066,7 @@ const Courses = () => {
                       formik.setFieldValue('department', '');
                     }}
                     error={formik.touched.school && Boolean(formik.errors.school)}
+                    disabled={isDepartmentHead} // Disable for department heads
                   >
                     {schools.map((school) => (
                       <MenuItem key={school} value={school}>
@@ -868,7 +1076,7 @@ const Courses = () => {
                   </Select>
                 </FormControl>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <FormControl fullWidth>
                   <InputLabel>Department</InputLabel>
                   <Select
@@ -876,7 +1084,7 @@ const Courses = () => {
                     value={formik.values.department}
                     onChange={formik.handleChange}
                     error={formik.touched.department && Boolean(formik.errors.department)}
-                    disabled={!formik.values.school}
+                    disabled={isDepartmentHead} // Disable for department heads
                   >
                     {formik.values.school && departments[formik.values.school] ? 
                       departments[formik.values.school].map((dept) => (
@@ -887,7 +1095,7 @@ const Courses = () => {
                   </Select>
                 </FormControl>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <FormControl fullWidth>
                   <InputLabel>Class Year</InputLabel>
                   <Select
@@ -907,7 +1115,7 @@ const Courses = () => {
                   )}
                 </FormControl>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <FormControl fullWidth>
                   <InputLabel>Semester</InputLabel>
                   <Select
@@ -934,7 +1142,7 @@ const Courses = () => {
                   Credit Hours
                 </Typography>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
                   label="Credit Hours"
@@ -952,7 +1160,7 @@ const Courses = () => {
                   }
                 />
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
                   label="Lecture Hours"
@@ -970,7 +1178,7 @@ const Courses = () => {
                   }
                 />
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
                   label="Lab Hours"
@@ -988,7 +1196,7 @@ const Courses = () => {
                   }
                 />
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
                   label="Tutorial Hours"
@@ -1013,7 +1221,7 @@ const Courses = () => {
                   Number of Sections
                 </Typography>
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
                   label="Lecture Sections"
@@ -1031,7 +1239,7 @@ const Courses = () => {
                   }
                 />
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
                   label="Lab Sections"
@@ -1049,7 +1257,7 @@ const Courses = () => {
                   }
                 />
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
                   label="Tutorial Sections"
@@ -1074,7 +1282,7 @@ const Courses = () => {
                   Additional Hours
                 </Typography>
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
                   label="HDP Hours"
@@ -1086,7 +1294,7 @@ const Courses = () => {
                   helperText={formik.touched.hdp && formik.errors.hdp}
                 />
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
                   label="Position Hours"
@@ -1098,7 +1306,7 @@ const Courses = () => {
                   helperText={formik.touched.position && formik.errors.position}
                 />
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
                   label="Branch Advisor Hours"
@@ -1126,78 +1334,7 @@ const Courses = () => {
         </form>
       </Dialog>
 
-      {/* Assign Course Dialog */}
-      <Dialog open={openAssignDialog} onClose={() => setOpenAssignDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          Assign Course: {selectedCourse?.code} - {selectedCourse?.title}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2 }}>
-            {selectedCourse?.instructor ? (
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" color="primary" gutterBottom>
-                  Current Instructor
-                </Typography>
-                <Box sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                  <Typography variant="body1">
-                    {selectedCourse.instructor.name}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {selectedCourse.instructor.email}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Department: {selectedCourse.instructor.department}
-                  </Typography>
-                </Box>
-              </Box>
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                No instructor currently assigned
-              </Typography>
-            )}
-
-            <FormControl fullWidth>
-              <InputLabel>Select New Instructor</InputLabel>
-              <Select
-                value={selectedInstructor}
-                onChange={(e) => setSelectedInstructor(e.target.value)}
-                label="Select New Instructor"
-              >
-                <MenuItem value="">
-                  <em>None</em>
-                </MenuItem>
-                {instructors
-                  .filter(instructor => 
-                    instructor.role === 'instructor' && 
-                    (!selectedCourse?.instructor || instructor._id !== selectedCourse.instructor._id)
-                  )
-                  .map((instructor) => (
-                    <MenuItem key={instructor._id} value={instructor._id}>
-                      <Box>
-                        <Typography variant="body1">
-                          {instructor.name}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {instructor.email} | {instructor.department}
-                        </Typography>
-                      </Box>
-                    </MenuItem>
-                  ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenAssignDialog(false)}>Cancel</Button>
-          <Button
-            onClick={handleAssignSubmit}
-            variant="contained"
-            disabled={!selectedInstructor}
-          >
-            {selectedCourse?.instructor ? 'Reassign Course' : 'Assign Course'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <AssignmentDialog />
     </Container>
   );
 };

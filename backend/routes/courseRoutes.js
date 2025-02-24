@@ -32,12 +32,18 @@ router.patch(
   courseController.rejectCourseAssignment
 );
 
-// Routes accessible only by admin
+// Routes accessible only by admin and department-head
 router.use(authController.restrictTo('department-head', 'admin'));
 router.post('/', courseController.createCourse);
 router.patch('/:id', courseController.updateCourse);
 router.delete('/:id', courseController.deleteCourse);
-router.patch('/:id/assign', courseController.assignCourse);
+router
+  .route('/:id/assign')
+  .patch(
+    authController.protect,
+    authController.restrictTo('admin', 'department-head'),
+    courseController.assignCourse
+  );
 
 // Course approval routes
 router.patch(

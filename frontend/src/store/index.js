@@ -2,7 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './authSlice';
 import courseReducer from './courseSlice';
 
-export const store = configureStore({
+const store = configureStore({
   reducer: {
     auth: authReducer,
     course: courseReducer,
@@ -12,3 +12,5 @@ export const store = configureStore({
       serializableCheck: false,
     }),
 });
+
+export default store;

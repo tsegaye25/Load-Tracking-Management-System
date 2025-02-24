@@ -1,99 +1,138 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { CssBaseline } from '@mui/material';
 import { ToastContainer } from 'react-toastify';
+import { Box } from '@mui/material';
 import 'react-toastify/dist/ReactToastify.css';
-
-// Components
 import Layout from './components/Layout';
+import Footer from './components/Footer';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Users from './pages/Users';
 import Courses from './pages/Courses';
+import Feedback from './pages/Feedback';
 import Profile from './pages/Profile';
-import Users from './pages/Users'; 
-import NotFound from './pages/NotFound';
+import PublicDashboard from './pages/PublicDashboard';
 import { useSelector } from 'react-redux';
 
-// Auth Guard
-const PrivateRoute = ({ children }) => {
-  const token = localStorage.getItem('token');
-  return token ? children : <Navigate to="/login" />;
-};
+const App = () => {
+  const { isAuthenticated } = useSelector((state) => state.auth);
 
-// Admin Guard
-const AdminRoute = ({ children }) => {
-  const { user } = useSelector(state => state.auth);
-  if (!user || user.role !== 'admin') {
-    return <Navigate to="/" />;
-  }
-  return children;
-};
+  // Wrapper for public pages that includes footer
+  const PublicPageWrapper = ({ children }) => (
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      {children}
+      <Footer />
+    </Box>
+  );
 
-function App() {
   return (
-    <>
-      <CssBaseline />
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Router>
-        <ToastContainer
-          position="top-right"
-          autoClose={5000}
-          hideProgressBar={false}
-          newestOnTop
-          closeOnClick
-          rtl={false}
-          pauseOnFocusLoss
-          draggable
-          pauseOnHover
-        />
         <Routes>
-          <Route path="/login" element={<Login />} />
+          {/* Public routes */}
           <Route
             path="/"
             element={
-              <PrivateRoute>
-                <Layout>
-                  <Dashboard />
-                </Layout>
-              </PrivateRoute>
+              !isAuthenticated ? (
+                <PublicPageWrapper>
+                  <PublicDashboard />
+                </PublicPageWrapper>
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
             }
           />
           <Route
-            path="/courses"
+            path="/login"
             element={
-              <PrivateRoute>
+              !isAuthenticated ? (
+                <PublicPageWrapper>
+                  <Login />
+                </PublicPageWrapper>
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
+
+          {/* Protected routes */}
+          <Route
+            path="/dashboard"
+            element={
+              isAuthenticated ? (
                 <Layout>
-                  <Courses />
+                  <Dashboard />
                 </Layout>
-              </PrivateRoute>
+              ) : (
+                <Navigate to="/" replace />
+              )
             }
           />
           <Route
             path="/profile"
             element={
-              <PrivateRoute>
+              isAuthenticated ? (
                 <Layout>
                   <Profile />
                 </Layout>
-              </PrivateRoute>
+              ) : (
+                <Navigate to="/" replace />
+              )
             }
           />
           <Route
             path="/users"
             element={
-              <PrivateRoute>
-                <AdminRoute>
-                  <Layout>
-                    <Users />
-                  </Layout>
-                </AdminRoute>
-              </PrivateRoute>
+              isAuthenticated ? (
+                <Layout>
+                  <Users />
+                </Layout>
+              ) : (
+                <Navigate to="/" replace />
+              )
             }
           />
-          <Route path="*" element={<NotFound />} />
+          <Route
+            path="/courses"
+            element={
+              isAuthenticated ? (
+                <Layout>
+                  <Courses />
+                </Layout>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/feedback"
+            element={
+              isAuthenticated ? (
+                <Layout>
+                  <Feedback />
+                </Layout>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+
+          {/* Catch all route - redirect to appropriate dashboard */}
+          <Route
+            path="*"
+            element={
+              isAuthenticated ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
         </Routes>
       </Router>
-    </>
+      <ToastContainer position="top-right" autoClose={3000} />
+    </Box>
   );
-}
+};
 
 export default App;

@@ -26,13 +26,37 @@ const userSchema = new mongoose.Schema({
   },
   school: {
     type: String,
-    required: [true, 'Please provide your school']
+    default: function() {
+      return ['finance', 'scientific-director', 'vice-scientific-director'].includes(this.role) 
+        ? 'Others University Staff Members' 
+        : undefined;
+    },
+    required: function() {
+      return !['finance', 'scientific-director', 'vice-scientific-director'].includes(this.role);
+    }
   },
   department: {
     type: String,
-    required: [true, 'Please provide your department'],
+    default: function() {
+      if (['finance', 'scientific-director', 'vice-scientific-director'].includes(this.role)) {
+        return 'Central Office';
+      }
+      if (this.role === 'school-dean') {
+        return 'Dean Office';
+      }
+      return undefined;
+    },
+    required: function() {
+      return !['finance', 'scientific-director', 'vice-scientific-director', 'school-dean'].includes(this.role);
+    },
     validate: {
       validator: function(dept) {
+        if (['finance', 'scientific-director', 'vice-scientific-director'].includes(this.role)) {
+          return true;
+        }
+        if (this.role === 'school-dean') {
+          return dept === 'Dean Office';
+        }
         const departments = {
           'College of Business and Economics': [
             'Management',
@@ -42,9 +66,13 @@ const userSchema = new mongoose.Schema({
             'Logistics and Supply Chain Management',
             'Marketing Management',
             'Tourism and Hotel Management'
-          ]
+          ],
+          'College of Computing and Informatics': ['Software Engineering', 'Computer Science', 'Information Technology'],
+          'College of Engineering': ['Mechanical', 'Electrical', 'Civil'],
+          'College of Natural Sciences': ['Mathematics', 'Physics', 'Chemistry', 'Biology'],
+          'Others University Staff Members': ['Central Office']
         };
-        return departments[this.school]?.includes(dept) || true; // Allow other departments for other schools
+        return departments[this.school]?.includes(dept) || true;
       },
       message: 'Invalid department for the selected school'
     }

@@ -13,7 +13,6 @@ import AssignmentIcon from '@mui/icons-material/Assignment';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import { useFormik } from 'formik';
-import * as Yup from 'yup';
 import { register, getAllUsers, updateUser, deleteUser } from '../../store/authSlice';
 import { toast } from 'react-toastify';
 
@@ -46,7 +45,8 @@ const Users = () => {
     'College of Business and Economics',
     'College of Computing and Informatics',
     'College of Engineering',
-    'College of Natural Sciences'
+    'College of Natural Sciences',
+    'Others University Staff Members'
   ];
 
   const departments = {
@@ -61,7 +61,8 @@ const Users = () => {
     ],
     'College of Computing and Informatics': ['Software Engineering', 'Computer Science', 'Information Technology'],
     'College of Engineering': ['Mechanical', 'Electrical', 'Civil'],
-    'College of Natural Sciences': ['Mathematics', 'Physics', 'Chemistry', 'Biology']
+    'College of Natural Sciences': ['Mathematics', 'Physics', 'Chemistry', 'Biology'],
+    'Others University Staff Members': ['Central Office']
   };
 
   const roles = [
@@ -72,6 +73,9 @@ const Users = () => {
     { value: 'scientific-director', label: 'Scientific Director' },
     { value: 'finance', label: 'Finance Officer' },
   ];
+
+  const rolesWithoutSchoolDept = ['finance', 'scientific-director', 'vice-scientific-director'];
+  const rolesWithOnlySchool = ['school-dean'];
 
   const formik = useFormik({
     initialValues: {
@@ -84,55 +88,94 @@ const Users = () => {
       password: '',
       passwordConfirm: ''
     },
-    validationSchema: Yup.object({
-      name: Yup.string().required('Name is required'),
-      email: Yup.string().email('Invalid email address').required('Email is required'),
-      phone: Yup.string().required('Phone number is required'),
-      role: Yup.string().required('Role is required'),
-      school: Yup.string().required('School is required'),
-      department: Yup.string().required('Department is required'),
-      password: !selectedUser && Yup.string()
-        .min(6, 'Password must be at least 6 characters')
-        .required('Password is required'),
-      passwordConfirm: !selectedUser && Yup.string()
-        .oneOf([Yup.ref('password'), null], 'Passwords must match')
-        .required('Please confirm your password')
-    }),
+    validate: (values) => {
+      const errors = {};
+
+      // Required fields for all roles
+      if (!values.name) errors.name = 'Name is required';
+      if (!values.email) errors.email = 'Email is required';
+      else if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}$/i.test(values.email)) {
+        errors.email = 'Invalid email address';
+      }
+      if (!values.phone) errors.phone = 'Phone number is required';
+      if (!values.role) errors.role = 'Role is required';
+
+      // School validation for roles that need it
+      if (!rolesWithoutSchoolDept.includes(values.role)) {
+        if (!values.school) errors.school = 'School is required';
+      }
+
+      // Department validation only for roles that need it
+      if (!rolesWithoutSchoolDept.includes(values.role) && !rolesWithOnlySchool.includes(values.role)) {
+        if (!values.department) errors.department = 'Department is required';
+      }
+
+      // Password validation only for new users
+      if (!selectedUser) {
+        if (!values.password) {
+          errors.password = 'Password is required';
+        } else if (values.password.length < 6) {
+          errors.password = 'Password must be at least 6 characters';
+        }
+
+        if (!values.passwordConfirm) {
+          errors.passwordConfirm = 'Please confirm your password';
+        } else if (values.password !== values.passwordConfirm) {
+          errors.passwordConfirm = 'Passwords must match';
+        }
+      }
+
+      return errors;
+    },
     onSubmit: async (values) => {
       try {
-        const userData = {
-          name: values.name,
-          email: values.email,
-          phone: values.phone,
-          role: values.role,
-          school: values.school,
-          department: values.department,
-          ...((!selectedUser) && {
-            password: values.password,
-            passwordConfirm: values.passwordConfirm
-          })
-        };
+        const userData = { ...values };
+        
+        // Set default values based on role
+        if (rolesWithoutSchoolDept.includes(values.role)) {
+          userData.school = 'Others University Staff Members';
+          userData.department = 'Central Office';
+        } else if (rolesWithOnlySchool.includes(values.role)) {
+          userData.department = 'Dean Office';
+        }
+
+        // Remove password fields for existing users
+        if (selectedUser) {
+          delete userData.password;
+          delete userData.passwordConfirm;
+        }
 
         if (selectedUser) {
-          const result = await dispatch(updateUser({ 
-            id: selectedUser._id, 
-            userData
-          }));
-          if (result) {
+          const result = await dispatch(updateUser({ id: selectedUser._id, userData }));
+          if (!result.error) {
+            toast.success('User updated successfully');
             handleClose();
+            dispatch(getAllUsers());
           }
         } else {
           const result = await dispatch(register(userData));
-          if (result) {
+          if (!result.error) {
             handleClose();
+            dispatch(getAllUsers());
           }
         }
       } catch (error) {
-        console.error('User operation failed:', error);
-        toast.error('Operation failed. Please try again.');
+        toast.error(error.message || 'Failed to save user');
       }
-    },
+    }
   });
+
+  useEffect(() => {
+    if (rolesWithoutSchoolDept.includes(formik.values.role)) {
+      formik.setFieldValue('school', 'Others University Staff Members');
+      formik.setFieldValue('department', 'Central Office');
+    } else if (rolesWithOnlySchool.includes(formik.values.role)) {
+      formik.setFieldValue('department', 'Dean Office');
+    }
+  }, [formik.values.role]);
+
+  const shouldShowSchoolDept = !rolesWithoutSchoolDept.includes(formik.values.role);
+  const shouldShowDepartment = !rolesWithoutSchoolDept.includes(formik.values.role) && !rolesWithOnlySchool.includes(formik.values.role);
 
   const handleEdit = (user) => {
     setSelectedUser(user);
@@ -209,7 +252,7 @@ const Users = () => {
       </Box>
     );
   }
-
+  
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -290,93 +333,6 @@ const Users = () => {
                                   </Typography>
                                 </Box>
                               </Grid>
-
-                              {user.role === 'instructor' && (
-                                <Grid item xs={12}>
-                                  <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>
-                                    Teaching Load Information
-                                  </Typography>
-                                  <Box sx={{ mt: 1 }}>
-                                    <Typography>
-                                      <strong>Current Load:</strong> {user.currentLoad || 0}
-                                    </Typography>
-                                    <Typography>
-                                      <strong>Maximum Load:</strong> {user.maxLoad || 0}
-                                    </Typography>
-                                    <Typography>
-                                      <strong>Remaining Load:</strong> {(user.maxLoad || 0) - (user.currentLoad || 0)}
-                                    </Typography>
-                                  </Box>
-                                </Grid>
-                              )}
-
-                              {user.role === 'instructor' && (
-                                <Box mt={2}>
-                                  <Typography variant="subtitle1" color="primary" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    Assigned Courses ({user.courses?.length || 0})
-                                  </Typography>
-                                  {user.courses?.length > 0 ? (
-                                    <Box sx={{ 
-                                      display: 'flex', 
-                                      flexDirection: 'column',
-                                      gap: 1,
-                                      maxHeight: user.courses.length > 4 ? '200px' : 'auto',
-                                      overflowY: user.courses.length > 4 ? 'auto' : 'visible',
-                                      p: 1,
-                                      '&::-webkit-scrollbar': {
-                                        width: '8px'
-                                      },
-                                      '&::-webkit-scrollbar-thumb': {
-                                        backgroundColor: 'rgba(0,0,0,0.2)',
-                                        borderRadius: '4px'
-                                      }
-                                    }}>
-                                      {user.courses.map((course, index) => (
-                                        <Paper
-                                          key={course._id}
-                                          variant="outlined"
-                                          sx={{ p: 1 }}
-                                        >
-                                          <Typography variant="subtitle2">
-                                            {index + 1}. {course.code} - {course.title}
-                                          </Typography>
-                                          <Typography variant="caption" color="text.secondary">
-                                            {course.school} | {course.department}
-                                          </Typography>
-                                          <Typography variant="caption" color="primary" sx={{ display: 'block' }}>
-                                            {course.totalHours} hours
-                                          </Typography>
-                                        </Paper>
-                                      ))}
-                                    </Box>
-                                  ) : (
-                                    <Typography variant="body2" color="text.secondary">
-                                      No courses assigned yet
-                                    </Typography>
-                                  )}
-                                </Box>
-                              )}
-
-                              <Grid item xs={12}>
-                                <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>
-                                  Account Status
-                                </Typography>
-                                <Box sx={{ mt: 1 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Typography component="span">
-                                      <strong>Status:</strong>
-                                    </Typography>
-                                    <Chip
-                                      size="small"
-                                      label={user.active ? 'Active' : 'Inactive'}
-                                      color={user.active ? 'success' : 'error'}
-                                    />
-                                  </Box>
-                                  <Typography>
-                                    <strong>Last Login:</strong> {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never'}
-                                  </Typography>
-                                </Box>
-                              </Grid>
                             </Grid>
                           </CardContent>
                         </Card>
@@ -445,51 +401,57 @@ const Users = () => {
                     onChange={formik.handleChange}
                     error={formik.touched.role && Boolean(formik.errors.role)}
                   >
-                    <MenuItem value="instructor">Instructor</MenuItem>
-                    <MenuItem value="department-head">Department Head</MenuItem>
-                    <MenuItem value="school-dean">School Dean</MenuItem>
-                    <MenuItem value="vice-scientific-director">Vice Scientific Director</MenuItem>
-                    <MenuItem value="scientific-director">Scientific Director</MenuItem>
-                    <MenuItem value="finance">Finance</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <FormControl fullWidth>
-                  <InputLabel>School</InputLabel>
-                  <Select
-                    id="school"
-                    name="school"
-                    value={formik.values.school}
-                    onChange={formik.handleChange}
-                    error={formik.touched.school && Boolean(formik.errors.school)}
-                  >
-                    {schools.map((school) => (
-                      <MenuItem key={school} value={school}>
-                        {school}
+                    {roles.map((role) => (
+                      <MenuItem key={role.value} value={role.value}>
+                        {role.label}
                       </MenuItem>
                     ))}
                   </Select>
                 </FormControl>
               </Grid>
-              <Grid item xs={12}>
-                <FormControl fullWidth>
-                  <InputLabel>Department</InputLabel>
-                  <Select
-                    id="department"
-                    name="department"
-                    value={formik.values.department}
-                    onChange={formik.handleChange}
-                    error={formik.touched.department && Boolean(formik.errors.department)}
-                  >
-                    {departments[formik.values.school]?.map((dept) => (
-                      <MenuItem key={dept} value={dept}>
-                        {dept}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
+              {shouldShowSchoolDept && (
+                <>
+                  <Grid item xs={12}>
+                    <FormControl fullWidth>
+                      <InputLabel>School</InputLabel>
+                      <Select
+                        id="school"
+                        name="school"
+                        value={formik.values.school}
+                        onChange={formik.handleChange}
+                        error={formik.touched.school && Boolean(formik.errors.school)}
+                      >
+                        {schools.map((school) => (
+                          <MenuItem key={school} value={school}>
+                            {school}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  {shouldShowDepartment && (
+                    <Grid item xs={12}>
+                      <FormControl fullWidth>
+                        <InputLabel>Department</InputLabel>
+                        <Select
+                          id="department"
+                          name="department"
+                          value={formik.values.department}
+                          onChange={formik.handleChange}
+                          error={formik.touched.department && Boolean(formik.errors.department)}
+                          disabled={!formik.values.school}
+                        >
+                          {departments[formik.values.school]?.map((dept) => (
+                            <MenuItem key={dept} value={dept}>
+                              {dept}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+                </>
+              )}
               {renderPasswordFields()}
             </Grid>
           </DialogContent>

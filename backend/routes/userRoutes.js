@@ -21,6 +21,22 @@ router.patch(
 );
 router.get('/instructors', userController.getInstructors);
 
+// Get instructors by department
+router.get(
+  '/instructors/department/:department',
+  authController.protect,
+  authController.restrictTo('department-head'),
+  userController.getInstructorsByDepartment
+);
+
+// Get department heads by department
+router.get(
+  '/department-heads/:department',
+  authController.protect,
+  authController.restrictTo('instructor'),
+  userController.getDepartmentHeadsByDepartment
+);
+
 // Admin only routes
 router.use(authController.restrictTo('admin'));
 router

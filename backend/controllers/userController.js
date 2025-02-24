@@ -289,18 +289,54 @@ exports.updateUser = catchAsync(async (req, res, next) => {
   });
 });
 
-exports.getInstructors = catchAsync(async (req, res) => {
-  const instructors = await User.find({ role: 'instructor' })
-    .select('name email department school totalLoad courses')
-    .populate({
-      path: 'courses',
-      select: 'title code creditHours school department',
-    });
+exports.getInstructors = catchAsync(async (req, res, next) => {
+  // Get all users with role 'instructor'
+  const instructors = await User.find({ 
+    role: 'instructor',
+    active: true 
+  }).select('name email department school role');
 
   res.status(200).json({
     status: 'success',
+    results: instructors.length,
     data: {
       instructors
+    }
+  });
+});
+
+exports.getInstructorsByDepartment = catchAsync(async (req, res, next) => {
+  const { department } = req.params;
+
+  const instructors = await User.find({
+    role: 'instructor',
+    department: department,
+    active: true
+  }).select('name email department school');
+
+  res.status(200).json({
+    status: 'success',
+    results: instructors.length,
+    data: {
+      instructors
+    }
+  });
+});
+
+exports.getDepartmentHeadsByDepartment = catchAsync(async (req, res, next) => {
+  const { department } = req.params;
+
+  const departmentHeads = await User.find({
+    role: 'department-head',
+    department: department,
+    active: true
+  }).select('name email department school');
+
+  res.status(200).json({
+    status: 'success',
+    results: departmentHeads.length,
+    data: {
+      departmentHeads
     }
   });
 });

@@ -1,121 +1,68 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useFormik } from 'formik';
-import * as Yup from 'yup';
+import React, { useState, useRef } from 'react';
 import {
   Box,
-  Button,
-  Card,
-  CardContent,
+  Typography,
+  Paper,
   Grid,
   TextField,
-  Typography,
-  CircularProgress,
+  Button,
   Avatar,
-  IconButton,
   Divider,
-  Paper,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Chip,
+  Card,
+  CardContent,
+  IconButton,
+  CircularProgress
 } from '@mui/material';
 import {
   Edit as EditIcon,
-  PhotoCamera as PhotoCameraIcon,
-  School as SchoolIcon,
-  Badge as BadgeIcon,
+  Save as SaveIcon,
+  Cancel as CancelIcon,
+  Person as PersonIcon,
   Email as EmailIcon,
   Phone as PhoneIcon,
+  School as SchoolIcon,
+  Business as BusinessIcon,
+  PhotoCamera as PhotoCameraIcon
 } from '@mui/icons-material';
+import { useSelector, useDispatch } from 'react-redux';
+import { toast } from 'react-toastify';
 import { updateProfile } from '../../store/authSlice';
 
 const Profile = () => {
   const dispatch = useDispatch();
-  const { user, loading } = useSelector((state) => state.auth);
+  const { user } = useSelector((state) => state.auth);
   const [isEditing, setIsEditing] = useState(false);
-  const fileInputRef = useRef(null);
+  const [loading, setLoading] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
+  const fileInputRef = useRef(null);
   const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
-  useEffect(() => {
-    if (user?.avatar) {
-      if (user.avatar.startsWith('data:') || user.avatar.startsWith('blob:')) {
-        setPreviewImage(user.avatar);
-      } else {
-        // Handle both absolute and relative paths
-        const avatarUrl = user.avatar.startsWith('http') 
-          ? user.avatar 
-          : `${baseURL}${user.avatar}`;
-        setPreviewImage(avatarUrl);
-      }
-    } else {
-      setPreviewImage(`${baseURL}/uploads/profile-images/default-avatar.jpg`);
-    }
-  }, [user?.avatar, baseURL]);
-
-  const schools = [
-    'College of Business and Economics',
-    'College of Computing and Informatics',
-    'College of Engineering',
-    'College of Natural Sciences'
-  ];
-
-  const departments = {
-    'College of Business and Economics': [
-      'Management',
-      'Accounting and Finance',
-      'Economics',
-      'Public Administration',
-      'Logistics and Supply Chain Management',
-      'Marketing Management',
-      'Tourism and Hotel Management'
-    ],
-    'College of Computing and Informatics': ['Software Engineering', 'Computer Science', 'Information Technology'],
-    'College of Engineering': ['Mechanical', 'Electrical', 'Civil',"Textile","Chemical","COTM","Surveying"],
-    'College of Natural Sciences': ['Mathematics', 'Physics', 'Chemistry', 'Biology']
-  };
-
-  const formik = useFormik({
-    initialValues: {
-      name: user?.name || '',
-      email: user?.email || '',
+  const [formData, setFormData] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    ...(user?.role !== 'admin' && {
       school: user?.school || '',
-      department: user?.department || '',
-      phone: user?.phone || '',
-      avatar: null,
-    },
-    validationSchema: Yup.object({
-      name: Yup.string().required('Name is required'),
-      email: Yup.string()
-        .email('Invalid email address')
-        .required('Email is required'),
-      school: Yup.string().required('School is required'),
-      department: Yup.string().required('Department is required'),
-      phone: Yup.string().required('Phone number is required'),
+      department: user?.department || ''
     }),
-    onSubmit: async (values) => {
-      const formData = new FormData();
-      Object.keys(values).forEach(key => {
-        if (key === 'avatar' && values[key]) {
-          formData.append('avatar', values[key]);
-        } else {
-          formData.append(key, values[key]);
-        }
-      });
-
-      const success = await dispatch(updateProfile(formData));
-      if (success) {
-        setIsEditing(false);
-      }
-    },
+    avatar: null
   });
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
 
   const handleImageChange = (event) => {
     const file = event.target.files[0];
     if (file) {
-      formik.setFieldValue('avatar', file);
+      setFormData(prev => ({
+        ...prev,
+        avatar: file
+      }));
       const reader = new FileReader();
       reader.onload = () => {
         setPreviewImage(reader.result);
@@ -124,225 +71,249 @@ const Profile = () => {
     }
   };
 
+  const getAvatarUrl = () => {
+    if (previewImage) return previewImage;
+    if (user?.avatar) {
+      if (user.avatar.startsWith('data:') || user.avatar.startsWith('blob:')) {
+        return user.avatar;
+      }
+      return user.avatar.startsWith('http') 
+        ? user.avatar 
+        : `${baseURL}${user.avatar}`;
+    }
+    return `${baseURL}/uploads/profile-images/default-avatar.jpg`;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      const submitData = new FormData();
+      Object.keys(formData).forEach(key => {
+        if (key === 'avatar' && formData[key]) {
+          submitData.append('avatar', formData[key]);
+        } else if (key !== 'avatar') {
+          submitData.append(key, formData[key]);
+        }
+      });
+
+      const result = await dispatch(updateProfile(submitData)).unwrap();
+      if (result) {
+        toast.success('Profile updated successfully');
+        setIsEditing(false);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setFormData({
+      name: user?.name || '',
+      email: user?.email || '',
+      phone: user?.phone || '',
+      ...(user?.role !== 'admin' && {
+        school: user?.school || '',
+        department: user?.department || ''
+      }),
+      avatar: null
+    });
+    setPreviewImage(null);
+    setIsEditing(false);
+  };
+
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3 }}>
-      <Paper elevation={0} sx={{ p: 3, mb: 3 }}>
-        <Box display="flex" alignItems="center" gap={3}>
-          <Box position="relative">
-            <Avatar
-              src={previewImage}
-              alt={user?.name}
-              sx={{ width: 120, height: 120 }}
-              imgProps={{
-                onError: () => {
-                  setPreviewImage(`${baseURL}/uploads/profile-images/default-avatar.jpg`);
-                }
-              }}
-            />
-            {isEditing && (
-              <IconButton
-                sx={{
-                  position: 'absolute',
-                  bottom: 0,
-                  right: 0,
-                  backgroundColor: 'primary.main',
-                  '&:hover': { backgroundColor: 'primary.dark' },
-                }}
-                onClick={() => fileInputRef.current.click()}
+      <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+        <Box display="flex" alignItems="center" justifyContent="space-between" mb={4}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Profile
+          </Typography>
+          {!isEditing ? (
+            <Button
+              startIcon={<EditIcon />}
+              variant="contained"
+              color="primary"
+              onClick={() => setIsEditing(true)}
+            >
+              Edit Profile
+            </Button>
+          ) : (
+            <Box>
+              <Button
+                startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}
+                variant="contained"
+                color="primary"
+                onClick={handleSubmit}
+                sx={{ mr: 1 }}
+                disabled={loading}
               >
-                <PhotoCameraIcon sx={{ color: 'white' }} />
-              </IconButton>
-            )}
-            <input
-              type="file"
-              hidden
-              ref={fileInputRef}
-              accept="image/*"
-              onChange={handleImageChange}
-            />
-          </Box>
-          <Box>
-            <Typography variant="h4" gutterBottom>
-              {user?.name}
-            </Typography>
-            <Box display="flex" gap={1} alignItems="center">
-              <Chip icon={<BadgeIcon />} label={user?.role} color="primary" />
+                Save
+              </Button>
+              <Button
+                startIcon={<CancelIcon />}
+                variant="outlined"
+                color="error"
+                onClick={handleCancel}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
             </Box>
-          </Box>
+          )}
         </Box>
-      </Paper>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={8}>
-          <Card>
-            <CardContent>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Typography variant="h6">Profile Information</Typography>
-                {!isEditing ? (
-                  <Button
-                    variant="outlined"
-                    startIcon={<EditIcon />}
-                    onClick={() => setIsEditing(true)}
-                  >
-                    Edit Profile
-                  </Button>
-                ) : null}
-              </Box>
-              <form onSubmit={formik.handleSubmit}>
-                <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      fullWidth
-                      label="Full Name"
-                      name="name"
-                      value={formik.values.name}
-                      onChange={formik.handleChange}
-                      error={formik.touched.name && Boolean(formik.errors.name)}
-                      helperText={formik.touched.name && formik.errors.name}
-                      disabled={!isEditing}
-                      InputProps={{
-                        startAdornment: <BadgeIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+        <Grid container spacing={4}>
+          {/* Profile Overview Card */}
+          <Grid item xs={12} md={4}>
+            <Card elevation={2}>
+              <CardContent>
+                <Box display="flex" flexDirection="column" alignItems="center" mb={2}>
+                  <Box position="relative">
+                    <Avatar
+                      src={getAvatarUrl()}
+                      alt={user?.name}
+                      sx={{
+                        width: 120,
+                        height: 120,
+                        mb: 2,
+                        bgcolor: 'primary.main',
+                        fontSize: '3rem'
                       }}
                     />
+                    {isEditing && (
+                      <IconButton
+                        sx={{
+                          position: 'absolute',
+                          bottom: 10,
+                          right: -10,
+                          backgroundColor: 'primary.main',
+                          '&:hover': { backgroundColor: 'primary.dark' },
+                        }}
+                        onClick={() => fileInputRef.current.click()}
+                      >
+                        <PhotoCameraIcon sx={{ color: 'white' }} />
+                      </IconButton>
+                    )}
+                    <input
+                      type="file"
+                      hidden
+                      ref={fileInputRef}
+                      accept="image/*"
+                      onChange={handleImageChange}
+                    />
+                  </Box>
+                  <Typography variant="h5" gutterBottom>
+                    {user?.name}
+                  </Typography>
+                  <Typography variant="subtitle1" color="textSecondary">
+                    {user?.role?.replace('-', ' ').toUpperCase()}
+                  </Typography>
+                </Box>
+                <Divider sx={{ my: 2 }} />
+                <Box>
+                  <Box display="flex" alignItems="center" mb={1}>
+                    <PersonIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="body2">{user?.name}</Typography>
+                  </Box>
+                  <Box display="flex" alignItems="center" mb={1}>
+                    <EmailIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="body2">{user?.email}</Typography>
+                  </Box>
+                  <Box display="flex" alignItems="center" mb={1}>
+                    <PhoneIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="body2">{user?.phone}</Typography>
+                  </Box>
+                  {user?.role !== 'admin' && (
+                    <>
+                      <Box display="flex" alignItems="center" mb={1}>
+                        <SchoolIcon sx={{ mr: 1, color: 'primary.main' }} />
+                        <Typography variant="body2">{user?.school}</Typography>
+                      </Box>
+                      <Box display="flex" alignItems="center" mb={1}>
+                        <BusinessIcon sx={{ mr: 1, color: 'primary.main' }} />
+                        <Typography variant="body2">{user?.department}</Typography>
+                      </Box>
+                    </>
+                  )}
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Profile Edit Form */}
+          <Grid item xs={12} md={8}>
+            <Card elevation={2}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Personal Information
+                </Typography>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Name"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleChange}
+                      disabled={!isEditing}
+                    />
                   </Grid>
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} sm={6}>
                     <TextField
                       fullWidth
                       label="Email"
                       name="email"
-                      value={formik.values.email}
-                      onChange={formik.handleChange}
-                      error={formik.touched.email && Boolean(formik.errors.email)}
-                      helperText={formik.touched.email && formik.errors.email}
+                      value={formData.email}
+                      onChange={handleChange}
                       disabled={!isEditing}
-                      InputProps={{
-                        startAdornment: <EmailIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-                      }}
+                      type="email"
                     />
                   </Grid>
-                  <Grid item xs={12} md={6}>
-                    <FormControl fullWidth disabled={!isEditing}>
-                      <InputLabel>School</InputLabel>
-                      <Select
-                        name="school"
-                        value={formik.values.school}
-                        onChange={(e) => {
-                          formik.setFieldValue('school', e.target.value);
-                          formik.setFieldValue('department', '');
-                        }}
-                        error={formik.touched.school && Boolean(formik.errors.school)}
-                        startAdornment={<SchoolIcon sx={{ mr: 1, color: 'text.secondary' }} />}
-                      >
-                        {schools.map((school) => (
-                          <MenuItem key={school} value={school}>
-                            {school}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <FormControl fullWidth disabled={!isEditing || !formik.values.school}>
-                      <InputLabel>Department</InputLabel>
-                      <Select
-                        name="department"
-                        value={formik.values.department}
-                        onChange={formik.handleChange}
-                        error={formik.touched.department && Boolean(formik.errors.department)}
-                      >
-                        {formik.values.school &&
-                          departments[formik.values.school]?.map((dept) => (
-                            <MenuItem key={dept} value={dept}>
-                              {dept}
-                            </MenuItem>
-                          ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} sm={6}>
                     <TextField
                       fullWidth
-                      label="Phone Number"
+                      label="Phone"
                       name="phone"
-                      value={formik.values.phone}
-                      onChange={formik.handleChange}
-                      error={formik.touched.phone && Boolean(formik.errors.phone)}
-                      helperText={formik.touched.phone && formik.errors.phone}
+                      value={formData.phone}
+                      onChange={handleChange}
                       disabled={!isEditing}
-                      InputProps={{
-                        startAdornment: <PhoneIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-                      }}
                     />
                   </Grid>
-                  {isEditing && (
-                    <Grid item xs={12}>
-                      <Box display="flex" justifyContent="flex-end" gap={2}>
-                        <Button
-                          variant="outlined"
-                          onClick={() => {
-                            setIsEditing(false);
-                            formik.resetForm();
-                            setPreviewImage(user?.avatar || null);
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="submit"
-                          variant="contained"
-                          color="primary"
-                          disabled={loading}
-                        >
-                          {loading ? (
-                            <CircularProgress size={24} color="inherit" />
-                          ) : (
-                            'Save Changes'
-                          )}
-                        </Button>
-                      </Box>
-                    </Grid>
+                  {user?.role !== 'admin' && (
+                    <>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="School"
+                          name="school"
+                          value={formData.school}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          required
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="Department"
+                          name="department"
+                          value={formData.department}
+                          onChange={handleChange}
+                          disabled={!isEditing}
+                          required
+                        />
+                      </Grid>
+                    </>
                   )}
                 </Grid>
-              </form>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Grid>
         </Grid>
-
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Teaching Load
-              </Typography>
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body1" gutterBottom>
-                  <strong>Total Load:</strong> {user?.totalLoad || 0} hours
-                </Typography>
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="subtitle2" gutterBottom color="primary">
-                  Assigned Courses:
-                </Typography>
-                {user?.courses?.length > 0 ? (
-                  user.courses.map((course) => (
-                    <Box key={course._id} sx={{ mb: 1 }}>
-                      <Typography variant="body2">
-                        {course.code} - {course.title}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {course.creditHours} credit hours
-                      </Typography>
-                    </Box>
-                  ))
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    No courses assigned yet
-                  </Typography>
-                )}
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      </Paper>
     </Box>
   );
 };

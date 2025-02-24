@@ -1,48 +1,53 @@
 const mongoose = require('mongoose');
 
-const feedbackSchema = new mongoose.Schema({
-  sender: {
-    type: mongoose.Schema.ObjectId,
-    ref: 'User',
-    required: [true, 'Feedback must have a sender']
+const feedbackSchema = new mongoose.Schema(
+  {
+    message: {
+      type: String,
+      required: [true, 'Feedback must have a message']
+    },
+    sender: {
+      id: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User',
+        required: [true, 'Feedback must have a sender']
+      },
+      name: String,
+      role: String
+    },
+    receiver: {
+      id: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User',
+        required: [true, 'Feedback must have a receiver']
+      },
+      name: String,
+      role: String
+    },
+    status: {
+      type: String,
+      enum: ['read', 'unread'],
+      default: 'unread'
+    },
+    replyTo: {
+      type: mongoose.Schema.ObjectId,
+      ref: 'Feedback'
+    }
   },
-  receiver: {
-    type: mongoose.Schema.ObjectId,
-    ref: 'User',
-    required: [true, 'Feedback must have a receiver']
-  },
-  course: {
-    type: mongoose.Schema.ObjectId,
-    ref: 'Course'
-  },
-  message: {
-    type: String,
-    required: [true, 'Feedback must have a message']
-  },
-  status: {
-    type: String,
-    enum: ['unread', 'read'],
-    default: 'unread'
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
   }
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
+);
 
-feedbackSchema.pre(/^find/, function(next) {
-  this.populate({
-    path: 'sender',
-    select: 'name role department'
-  }).populate({
-    path: 'receiver',
-    select: 'name role department'
-  }).populate({
-    path: 'course',
-    select: 'title'
-  });
-  next();
+// Virtual populate for replies
+feedbackSchema.virtual('replies', {
+  ref: 'Feedback',
+  foreignField: 'replyTo',
+  localField: '_id'
 });
 
 const Feedback = mongoose.model('Feedback', feedbackSchema);
+
 module.exports = Feedback;
