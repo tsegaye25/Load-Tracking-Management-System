@@ -46,9 +46,11 @@ const Login = () => {
       <Box
         sx={{
           marginTop: 8,
+          marginBottom: 16,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
+          minHeight: 'calc(100vh - 200px)',
         }}
       >
         <Paper
