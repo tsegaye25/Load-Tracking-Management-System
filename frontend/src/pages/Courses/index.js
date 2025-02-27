@@ -21,7 +21,6 @@ import { toast } from 'react-toastify';
 
 const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprove, onReject }) => {
   const { user } = useSelector((state) => state.auth);
-  const isAdmin = user?.role === 'admin';
   const isDepartmentHead = user?.role === 'department-head';
   const isInstructor = user?.role === 'instructor';
 
@@ -91,7 +90,7 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
           </Stack>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          {(isAdmin || isFromDepartmentHeadDepartment) && (
+          {isFromDepartmentHeadDepartment && (
             <>
               <IconButton 
                 size="small" 
@@ -99,7 +98,7 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                   e.stopPropagation();
                   onEdit(course);
                 }}
-                color="primary"
+                title="Edit"
               >
                 <EditIcon />
               </IconButton>
@@ -107,33 +106,26 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                 size="small" 
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDelete(course._id);
+                  onDelete(course);
                 }}
-                color="error"
+                title="Delete"
               >
                 <DeleteIcon />
               </IconButton>
+              {isUnassigned && (
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAssign(course);
+                  }}
+                  title="Assign Instructor"
+                  color="primary"
+                >
+                  <AssignmentIndIcon />
+                </IconButton>
+              )}
             </>
-          )}
-          {isAdmin && (
-            <IconButton 
-              size="small" 
-              onClick={(e) => { e.stopPropagation(); onAssign(course); }}
-              color={course.instructor ? "success" : "default"}
-            >
-              <AssignmentIndIcon />
-            </IconButton>
-          )}
-          {isDepartmentHead && isFromDepartmentHeadDepartment && isUnassigned && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<AssignmentIndIcon />}
-              onClick={(e) => { e.stopPropagation(); onAssign(course); }}
-              sx={{ ml: 1 }}
-            >
-              Assign
-            </Button>
           )}
           {isInstructor && isUnassigned && (
             <Button
@@ -342,19 +334,41 @@ const Courses = () => {
   const [filterClassYear, setFilterClassYear] = useState('');
   const [openFilterDialog, setOpenFilterDialog] = useState(false);
 
+  const fetchInstructorsList = async () => {
+    try {
+      setLoadingInstructors(true);
+      const result = await dispatch(getInstructors());
+      console.log('Fetched instructors:', result);
+      
+      if (Array.isArray(result)) {
+        const availableInstructors = result.filter(instructor => 
+          instructor.department === user.department && 
+          instructor.school === user.school
+        );
+        console.log('Filtered instructors:', availableInstructors);
+        setInstructors(availableInstructors);
+        
+        if (availableInstructors.length === 0) {
+          toast.warning(`No instructors available in ${user.department} department of ${user.school}`);
+        }
+      } else {
+        console.error('Invalid instructors data:', result);
+        toast.error('Failed to load instructors: Invalid data format');
+      }
+    } catch (error) {
+      console.error('Failed to fetch instructors:', error);
+      toast.error(error.message || 'Failed to load instructors');
+    } finally {
+      setLoadingInstructors(false);
+    }
+  };
+
   useEffect(() => {
     dispatch(fetchCourses());
-    const fetchInstructorsList = async () => {
-      try {
-        const instructorsList = await dispatch(getInstructors());
-        setInstructors(instructorsList);
-      } catch (error) {
-        console.error('Failed to fetch instructors:', error);
-        toast.error('Failed to load instructors');
-      }
-    };
-    fetchInstructorsList();
-  }, [dispatch]);
+    if (user?.role === 'department-head') {
+      fetchInstructorsList();
+    }
+  }, [dispatch, user]);
 
   const schools = [
     'College of Business and Economics',
@@ -506,51 +520,6 @@ const Courses = () => {
 
   const classYears = ['First', 'Second', 'Third', 'Fourth', 'Fifth'];
   const semesters = ['First', 'Second'];
-
-  const fetchInstructors = async () => {
-    try {
-      setLoadingInstructors(true);
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-      const response = await fetch(`${baseURL}/api/v1/users/instructors`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch instructors');
-      }
-
-      if (data.status === 'success' && Array.isArray(data.data.instructors)) {
-        // Filter instructors based on school if user is department head
-        const availableInstructors = user?.role === 'department-head'
-          ? data.data.instructors.filter(instructor => 
-              instructor.school === user.school && 
-              instructor.role === 'instructor')
-          : data.data.instructors;
-
-        console.log('Available instructors:', availableInstructors); // Debug log
-        setInstructors(availableInstructors);
-      } else {
-        console.error('Invalid instructors data:', data); // Debug log
-        setInstructors([]);
-      }
-    } catch (error) {
-      console.error('Error fetching instructors:', error);
-      toast.error(error.message || 'Failed to fetch instructors');
-      setInstructors([]);
-    } finally {
-      setLoadingInstructors(false);
-    }
-  };
-
-  useEffect(() => {
-    if ((user?.role === 'admin' || user?.role === 'department-head') && openAssignDialog) {
-      fetchInstructors();
-    }
-  }, [user, openAssignDialog]);
 
   const handleAssignClick = (course) => {
     setSelectedCourse(course);
@@ -707,9 +676,8 @@ const Courses = () => {
     setFilterValue(event.target.value);
   };
 
-  const isAdmin = user?.role === 'admin';
-  const isInstructor = user?.role === 'instructor';
   const isDepartmentHead = user?.role === 'department-head';
+  const isInstructor = user?.role === 'instructor';
 
   const AssignmentDialog = () => {
     const hasInstructors = Array.isArray(instructors) && instructors.length > 0;

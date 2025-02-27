@@ -10,8 +10,11 @@ import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Courses from './pages/Courses';
 import Feedback from './pages/Feedback';
+import ComposeFeedback from './pages/Feedback/ComposeFeedback';
 import Profile from './pages/Profile';
 import PublicDashboard from './pages/PublicDashboard';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import { useSelector } from 'react-redux';
 
 const App = () => {
@@ -48,6 +51,30 @@ const App = () => {
               !isAuthenticated ? (
                 <PublicPageWrapper>
                   <Login />
+                </PublicPageWrapper>
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
+          <Route
+            path="/forgot-password"
+            element={
+              !isAuthenticated ? (
+                <PublicPageWrapper>
+                  <ForgotPassword />
+                </PublicPageWrapper>
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            }
+          />
+          <Route
+            path="/reset-password/:token"
+            element={
+              !isAuthenticated ? (
+                <PublicPageWrapper>
+                  <ResetPassword />
                 </PublicPageWrapper>
               ) : (
                 <Navigate to="/dashboard" replace />
@@ -110,6 +137,18 @@ const App = () => {
               isAuthenticated ? (
                 <Layout>
                   <Feedback />
+                </Layout>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/feedback/compose"
+            element={
+              isAuthenticated ? (
+                <Layout>
+                  <ComposeFeedback />
                 </Layout>
               ) : (
                 <Navigate to="/" replace />

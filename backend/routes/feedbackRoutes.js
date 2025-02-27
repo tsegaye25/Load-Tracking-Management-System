@@ -23,14 +23,28 @@ router.get(
   feedbackController.getInstructorFeedbacks
 );
 
+// Get unread feedback count
+router.get(
+  '/unread-count',
+  authController.protect,
+  feedbackController.getUnreadCount
+);
+
 // Mark feedback as read - accessible to both department heads and instructors
 router.patch('/:id/mark-read', feedbackController.markAsRead);
 
-// Reply to feedback
+// Mark feedback as read
+router.patch(
+  '/:id/read',
+  authController.protect,
+  feedbackController.markAsRead
+);
+
+// Reply to feedback - accessible to both department heads and instructors
 router.post(
   '/:id/reply',
-  authController.restrictTo('department-head'),
-  feedbackController.replyToFeedback
+  authController.restrictTo('department-head', 'instructor'),
+  feedbackController.createFeedback
 );
 
 // Update and delete own feedback

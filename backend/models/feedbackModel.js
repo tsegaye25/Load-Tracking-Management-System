@@ -13,7 +13,8 @@ const feedbackSchema = new mongoose.Schema(
         required: [true, 'Feedback must have a sender']
       },
       name: String,
-      role: String
+      role: String,
+      avatar: String
     },
     receiver: {
       id: {
@@ -22,7 +23,8 @@ const feedbackSchema = new mongoose.Schema(
         required: [true, 'Feedback must have a receiver']
       },
       name: String,
-      role: String
+      role: String,
+      avatar: String
     },
     status: {
       type: String,

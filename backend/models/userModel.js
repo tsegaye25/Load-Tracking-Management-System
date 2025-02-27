@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const validator = require('validator');
 const bcrypt = require('bcryptjs');
+const crypto = require("crypto")
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -27,17 +28,20 @@ const userSchema = new mongoose.Schema({
   school: {
     type: String,
     default: function() {
+      if (this.role === 'admin') return 'Administration';
       return ['finance', 'scientific-director', 'vice-scientific-director'].includes(this.role) 
         ? 'Others University Staff Members' 
         : undefined;
     },
     required: function() {
+      if (this.role === 'admin') return false;
       return !['finance', 'scientific-director', 'vice-scientific-director'].includes(this.role);
     }
   },
   department: {
     type: String,
     default: function() {
+      if (this.role === 'admin') return 'System Administration';
       if (['finance', 'scientific-director', 'vice-scientific-director'].includes(this.role)) {
         return 'Central Office';
       }
@@ -47,6 +51,7 @@ const userSchema = new mongoose.Schema({
       return undefined;
     },
     required: function() {
+      if (this.role === 'admin') return false;
       return !['finance', 'scientific-director', 'vice-scientific-director', 'school-dean'].includes(this.role);
     },
     validate: {
@@ -56,6 +61,9 @@ const userSchema = new mongoose.Schema({
         }
         if (this.role === 'school-dean') {
           return dept === 'Dean Office';
+        }
+        if (this.role === 'admin') {
+          return dept === 'System Administration';
         }
         const departments = {
           'College of Business and Economics': [
@@ -149,6 +157,16 @@ userSchema.methods.changedPasswordAfter = function(JWTTimestamp) {
     return JWTTimestamp < changedTimestamp;
   }
   return false;
+};
+
+userSchema.methods.createPasswordResetToken = function() {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  this.passwordResetToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+  this.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+  return resetToken;
 };
 
 const User = mongoose.model('User', userSchema);

@@ -290,17 +290,50 @@ exports.updateUser = catchAsync(async (req, res, next) => {
 });
 
 exports.getInstructors = catchAsync(async (req, res, next) => {
-  // Get all users with role 'instructor'
-  const instructors = await User.find({ 
+  // Get the department head's department
+  const departmentHead = await User.findById(req.user.id);
+  if (!departmentHead || !departmentHead.department) {
+    return next(new AppError('Department head information not found', 404));
+  }
+
+  // Find all instructors in the same department
+  const instructors = await User.find({
     role: 'instructor',
-    active: true 
-  }).select('name email department school role');
+    department: departmentHead.department,
+    school: departmentHead.school // Also match the school
+  }).select('name email department school');
+
+  if (!instructors || instructors.length === 0) {
+    return next(new AppError(`No instructors available in ${departmentHead.department} department of ${departmentHead.school}`, 404));
+  }
+
+  // Get the workload for each instructor
+  const instructorsWithWorkload = await Promise.all(
+    instructors.map(async (instructor) => {
+      const assignedCourses = await Course.find({
+        instructor: instructor._id,
+        status: { $in: ['approved', 'pending'] } // Consider both approved and pending courses
+      });
+
+      const totalHours = assignedCourses.reduce((sum, course) => sum + (course.totalHours || 0), 0);
+
+      return {
+        _id: instructor._id,
+        name: instructor.name,
+        email: instructor.email,
+        department: instructor.department,
+        school: instructor.school,
+        currentWorkload: totalHours,
+        assignedCourses: assignedCourses.length
+      };
+    })
+  );
 
   res.status(200).json({
     status: 'success',
-    results: instructors.length,
+    results: instructorsWithWorkload.length,
     data: {
-      instructors
+      instructors: instructorsWithWorkload
     }
   });
 });
@@ -337,6 +370,47 @@ exports.getDepartmentHeadsByDepartment = catchAsync(async (req, res, next) => {
     results: departmentHeads.length,
     data: {
       departmentHeads
+    }
+  });
+});
+
+exports.getDepartmentHeads = catchAsync(async (req, res, next) => {
+  // Get the instructor's department and school
+  const instructor = await User.findById(req.user.id);
+  if (!instructor || !instructor.department) {
+    return next(new AppError('Instructor information not found', 404));
+  }
+
+  // Find all department heads in the same department and school
+  const departmentHeads = await User.find({
+    role: 'department-head',
+    department: instructor.department,
+    school: instructor.school
+  }).select('name email department school');
+
+  if (!departmentHeads || departmentHeads.length === 0) {
+    return next(new AppError(`No department head found for ${instructor.department} department in ${instructor.school}`, 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    results: departmentHeads.length,
+    data: {
+      departmentHeads
+    }
+  });
+});
+
+exports.getInstructors = catchAsync(async (req, res) => {
+  const instructors = await User.find({ 
+    role: 'instructor',
+    department: req.user.department 
+  }).select('name email department school');
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      instructors
     }
   });
 });

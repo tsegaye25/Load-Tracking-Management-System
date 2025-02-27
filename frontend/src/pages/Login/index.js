@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import {
@@ -12,13 +12,17 @@ import {
   Paper,
   Link,
   CircularProgress,
+  Alert,
 } from '@mui/material';
 import { login } from '../../store/authSlice';
 
 const Login = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { loading } = useSelector((state) => state.auth);
+  const message = location.state?.message;
+  const messageType = location.state?.type;
 
   const formik = useFormik({
     initialValues: {
@@ -66,6 +70,20 @@ const Login = () => {
           <Typography component="h1" variant="h5">
             Sign in to LTMS
           </Typography>
+
+          {message && (
+            <Alert 
+              severity={messageType || 'info'} 
+              sx={{ width: '100%', mt: 2 }}
+              onClose={() => {
+                // Clear the message from location state
+                window.history.replaceState({}, document.title)
+              }}
+            >
+              {message}
+            </Alert>
+          )}
+
           <Box
             component="form"
             onSubmit={formik.handleSubmit}
@@ -117,8 +135,16 @@ const Login = () => {
                 component="button"
                 variant="body2"
                 onClick={() => navigate('/register')}
+                sx={{ mb: 2, display: 'block' }}
               >
                 {"Don't have an account? Sign Up"}
+              </Link>
+              <Link
+                component="button"
+                variant="body2"
+                onClick={() => navigate('/forgot-password')}
+              >
+                {"Forgot your password?"}
               </Link>
             </Box>
           </Box>

@@ -1,8 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-
-const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+import { baseURL } from '../config';
 
 const initialState = {
   user: JSON.parse(localStorage.getItem('user')) || null,
@@ -197,15 +196,28 @@ export const deleteUser = (id) => async (dispatch) => {
   }
 };
 
-export const getInstructors = () => async (dispatch) => {
+export const getInstructors = () => async (dispatch, getState) => {
   try {
     dispatch(setLoading(true));
+    const { user } = getState().auth;
     const { data } = await axios.get(`${baseURL}/api/v1/users/instructors`);
-    return data.data.instructors;
+    
+    if (!data.data || !data.data.instructors) {
+      throw new Error('No instructors data received from server');
+    }
+
+    // Filter instructors based on department head's department and school
+    const filteredInstructors = user?.role === 'department-head'
+      ? data.data.instructors.filter(instructor => 
+          instructor.department === user.department && 
+          instructor.school === user.school)
+      : data.data.instructors;
+
+    return filteredInstructors;
   } catch (error) {
-    const message = error.response?.data?.message || 'Failed to fetch instructors';
+    const message = error.response?.data?.message || error.message || 'Failed to fetch instructors';
     dispatch(setError(message));
-    throw error;
+    return []; // Return empty array instead of throwing
   } finally {
     dispatch(setLoading(false));
   }

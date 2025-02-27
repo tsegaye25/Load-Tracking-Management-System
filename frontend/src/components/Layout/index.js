@@ -41,6 +41,7 @@ const drawerWidth = 240;
 const Layout = ({ children }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { user } = useSelector((state) => state.auth);
   const navigate = useNavigate();
   const location = useLocation();
@@ -62,6 +63,32 @@ const Layout = ({ children }) => {
       setAvatarUrl(`${baseURL}/uploads/profile-images/default-avatar.jpg`);
     }
   }, [user?.avatar, baseURL]);
+
+  // Fetch unread feedback count
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      if (user && (user.role === 'instructor' || user.role === 'department-head')) {
+        try {
+          const response = await fetch(`${baseURL}/api/v1/feedbacks/unread-count`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          const data = await response.json();
+          if (data.status === 'success') {
+            setUnreadCount(data.data.unreadCount);
+          }
+        } catch (error) {
+          console.error('Error fetching unread count:', error);
+        }
+      }
+    };
+
+    fetchUnreadCount();
+    // Set up polling every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, [user, baseURL]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -86,7 +113,12 @@ const Layout = ({ children }) => {
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Courses', icon: <Book />, path: '/courses' },
     ...(user?.role === 'instructor' || user?.role === 'department-head'
-      ? [{ text: 'Feedback', icon: <FeedbackIcon />, path: '/feedback' }] 
+      ? [{ 
+          text: 'Feedback', 
+          icon: <FeedbackIcon />, 
+          path: '/feedback',
+          badge: unreadCount > 0 ? unreadCount : null
+        }] 
       : []
     ),
     { text: 'Profile', icon: <PersonIcon />, path: '/profile' },
@@ -105,14 +137,24 @@ const Layout = ({ children }) => {
         {menuItems.map((item) => (
           <ListItem key={item.text} disablePadding>
             <ListItemButton
-              onClick={() => {
-                navigate(item.path);
-                setMobileOpen(false);
-              }}
               selected={location.pathname === item.path}
+              onClick={() => navigate(item.path)}
             >
               <ListItemIcon>{item.icon}</ListItemIcon>
               <ListItemText primary={item.text} />
+              {item.badge && (
+                <Chip
+                  size="small"
+                  color="error"
+                  label={item.badge}
+                  sx={{
+                    ml: 1,
+                    minWidth: 20,
+                    height: 20,
+                    borderRadius: '10px'
+                  }}
+                />
+              )}
             </ListItemButton>
           </ListItem>
         ))}
