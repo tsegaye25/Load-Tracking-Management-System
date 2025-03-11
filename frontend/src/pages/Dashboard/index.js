@@ -68,6 +68,11 @@ const Dashboard = () => {
                 School: {user.school}
               </Typography>
             )}
+            {user.department && (
+              <Typography variant="subtitle1" color="text.secondary">
+                Department: {user.department}
+              </Typography>
+            )}
           </Paper>
         </Grid>
 
@@ -225,7 +230,7 @@ const Dashboard = () => {
                                   Position Hours: {course.position || 0}
                                 </Typography>
                                 <Typography variant="body2">
-                                  Branch Advisor Hours: {course.BranchAdvisor || 0}
+                                  Branch Advisor Hours: {course.branchAdvisor || 0}
                                 </Typography>
                               </Box>
                             </Grid>
@@ -240,18 +245,6 @@ const Dashboard = () => {
                   No courses assigned yet.
                 </Typography>
               )}
-            </Paper>
-          </Grid>
-        )}
-
-        {/* Admin Section */}
-        {user.role === 'admin' && (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="h6" gutterBottom>
-                System Statistics
-              </Typography>
-              {/* Add admin statistics here */}
             </Paper>
           </Grid>
         )}

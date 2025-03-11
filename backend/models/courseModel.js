@@ -109,13 +109,42 @@ const courseSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'unassigned'],
+    enum: [
+      'pending', 
+      'approved', 
+      'rejected', 
+      'unassigned',
+      'dean-review',
+      'dean-approved',
+      'dean-rejected',
+      'vice-director-review',
+      'vice-director-approved',
+      'vice-director-rejected'
+    ],
     default: 'unassigned'
+  },
+  rejectionReason: {
+    type: String,
+    trim: true
+  },
+  deanRejectionDate: {
+    type: Date
   },
   approvalHistory: [{
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected']
+      enum: [
+        'pending', 
+        'approved', 
+        'rejected',
+        'dean-review',
+        'dean-approved',
+        'dean-rejected',
+        'vice-director-review',
+        'vice-director-approved',
+        'vice-director-rejected',
+        'resubmitted-to-dean'
+      ]
     },
     approver: {
       type: mongoose.Schema.ObjectId,

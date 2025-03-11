@@ -37,6 +37,7 @@ router.get(
   userController.getDepartmentHeads
 );
 
+
 // Get department heads by department
 router.get(
   '/department-heads/:department',
@@ -50,6 +51,14 @@ router.get(
   authController.restrictTo('department-head'),
   userController.getInstructorsByDepartment
 );
+
+// Get school instructors
+router
+  .route('/school-instructors')
+  .get(
+    authController.restrictTo('school-dean'),
+    userController.getSchoolInstructors
+  );
 
 // Admin only routes
 router.use(authController.restrictTo('admin'));

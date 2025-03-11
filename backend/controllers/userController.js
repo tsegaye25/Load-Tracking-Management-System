@@ -338,6 +338,7 @@ exports.getInstructors = catchAsync(async (req, res, next) => {
   });
 });
 
+
 exports.getInstructorsByDepartment = catchAsync(async (req, res, next) => {
   const { department } = req.params;
 
@@ -425,5 +426,69 @@ exports.deleteUser = catchAsync(async (req, res, next) => {
   res.status(204).json({
     status: 'success',
     data: null
+  });
+});
+
+exports.getSchoolInstructors = catchAsync(async (req, res, next) => {
+  const dean = await User.findById(req.user.id);
+  if (!dean || !dean.school) {
+    return next(new AppError('School dean information not found', 404));
+  }
+
+  // Get all users in the school
+  const users = await User.find({ 
+    school: dean.school,
+  }).select('name email role department totalLoad overloadHours salary');
+
+  // Get all courses for instructors
+  const courses = await Course.find({
+    school: dean.school,
+    instructor: { $exists: true, $ne: null }
+  }).populate('instructor', 'name email');
+
+  // Group courses by instructor
+  const instructorCourses = {};
+  courses.forEach(course => {
+    const instructorId = course.instructor._id.toString();
+    if (!instructorCourses[instructorId]) {
+      instructorCourses[instructorId] = [];
+    }
+    instructorCourses[instructorId].push(course);
+  });
+
+  // Calculate statistics and combine data
+  const instructorStats = users.map(user => {
+    const userCourses = instructorCourses[user._id.toString()] || [];
+    const courseCount = userCourses.length;
+    const totalCreditHours = userCourses.reduce((sum, course) => sum + course.creditHours, 0);
+    
+    return {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      department: user.department,
+      totalLoad: user.totalLoad || 0,
+      overloadHours: user.overloadHours || 0,
+      salary: user.salary || 0,
+      courseCount,
+      totalCreditHours,
+      courses: userCourses.map(course => ({
+        _id: course._id,
+        code: course.code,
+        title: course.title,
+        creditHours: course.creditHours,
+        classYear: course.classYear,
+        department: course.department
+      }))
+    };
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      school: dean.school,
+      instructorStats
+    }
   });
 });

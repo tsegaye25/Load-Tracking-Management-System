@@ -7,11 +7,13 @@ const xss = require('xss-clean');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const cookieParser = require('cookie-parser');
 
 const AppError = require('./utils/appError');
 const userRoutes = require('./routes/userRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
 const app = express();
 
@@ -47,6 +49,7 @@ app.use('/api', limiter);
 // Body parser
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(cookieParser());
 
 // Data sanitization against NoSQL query injection
 app.use(mongoSanitize());
@@ -75,6 +78,7 @@ if (!fs.existsSync(defaultAvatarDest) && fs.existsSync(defaultAvatarSrc)) {
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/courses', courseRoutes);
 app.use('/api/v1/feedbacks', feedbackRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
 
 // Handle undefined routes
 app.all('*', (req, res, next) => {

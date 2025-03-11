@@ -6,12 +6,13 @@ import {
   IconButton, Card, CardContent, Divider, FormControl,
   InputLabel, Select, Chip, CircularProgress, Accordion,
   AccordionSummary, AccordionDetails, FormHelperText,
-  Pagination, Stack
+  Pagination, Stack, alpha, DialogContentText
 } from '@mui/material';
+import { LoadingButton } from '@mui/lab';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, 
   ExpandMore as ExpandMoreIcon, AssignmentInd as AssignmentIndIcon, 
   Search as SearchIcon, ArrowBack as ArrowBackIcon, 
-  FilterList as FilterListIcon 
+  FilterList as FilterListIcon, Send as SendIcon
 } from '@mui/icons-material';
 import * as Yup from 'yup';
 import { useFormik } from 'formik';
@@ -19,7 +20,21 @@ import { fetchCourses, createCourse, assignCourse, deleteCourse, updateCourseByI
 import { getInstructors } from '../../store/authSlice';
 import { toast } from 'react-toastify';
 
-const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprove, onReject }) => {
+const formatDate = (dateString) => {
+  if (!dateString) return 'Not Available';
+  const date = new Date(dateString);
+  return date instanceof Date && !isNaN(date) 
+    ? date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    : 'Not Available';
+};
+
+const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprove, onReject, onResubmitToDean }) => {
   const { user } = useSelector((state) => state.auth);
   const isDepartmentHead = user?.role === 'department-head';
   const isInstructor = user?.role === 'instructor';
@@ -153,12 +168,24 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                 variant="contained"
                 color="error"
                 size="small"
-                onClick={(e) => { e.stopPropagation(); onReject(course._id); }}
+                onClick={(e) => { e.stopPropagation(); onReject(course._id, 'Please provide a reason for rejection'); }}
                 sx={{ ml: 1 }}
               >
                 Reject
               </Button>
             </>
+          )}
+          {isDepartmentHead && course.status === 'dean-rejected' && (
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              onClick={(e) => { e.stopPropagation(); onResubmitToDean(course); }}
+              sx={{ ml: 1 }}
+              startIcon={<SendIcon />}
+            >
+              Resubmit to Dean
+            </Button>
           )}
         </Box>
       </AccordionSummary>
@@ -278,6 +305,52 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
               </Typography>
             </Box>
           </Grid>
+
+          {/* Rejection Information - Only show if course is rejected by dean and user is department head */}
+          {course.status === 'dean-rejected' && (
+            <Grid item xs={12}>
+              <Card sx={{ mt: 2, bgcolor: (theme) => alpha(theme.palette.error.main, 0.05) }}>
+                <CardContent>
+                  <Typography variant="subtitle1" color="error" gutterBottom>
+                    Course Status: Rejected by Dean
+                  </Typography>
+                  {isDepartmentHead && (
+                    <>
+                      <Box sx={{ ml: 2 }}>
+                        <Typography variant="body2">
+                          <strong>Rejected Date:</strong> {formatDate(course.deanRejectionDate)}
+                        </Typography>
+                        {course.approvalHistory && course.approvalHistory.length > 0 && (
+                          course.approvalHistory
+                            .filter(history => history.status === 'dean-rejected')
+                            .map((history, index) => (
+                              <Box key={index} sx={{ mt: 1 }}>
+                                <Typography variant="body2">
+                                  <strong>Rejection Reason:</strong>
+                                </Typography>
+                                <Typography variant="body2" color="error.dark" sx={{ ml: 2, mt: 0.5 }}>
+                                  {history.comment}
+                                </Typography>
+                              </Box>
+                            ))
+                        )}
+                        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                          <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={() => onResubmitToDean(course)}
+                            startIcon={<SendIcon />}
+                          >
+                            Resubmit to Dean
+                          </Button>
+                        </Box>
+                      </Box>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+          )}
         </Grid>
       </AccordionDetails>
     </Accordion>
@@ -333,6 +406,9 @@ const Courses = () => {
   const [filterSemester, setFilterSemester] = useState('');
   const [filterClassYear, setFilterClassYear] = useState('');
   const [openFilterDialog, setOpenFilterDialog] = useState(false);
+
+  const [resubmitCourse, setResubmitCourse] = useState(null);
+  const [resubmitDialogOpen, setResubmitDialogOpen] = useState(false);
 
   const fetchInstructorsList = async () => {
     try {
@@ -586,61 +662,84 @@ const Courses = () => {
 
   const handleApprove = async (courseId) => {
     try {
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-      const token = localStorage.getItem('token');
-      
-      const response = await fetch(`${baseURL}/api/v1/courses/${courseId}/approve-assignment`, {
-        method: 'PATCH',
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/v1/courses/${courseId}/dean-review`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({
-          comment: 'Course assignment approved by department head'
-        })
+          status: 'dean-approved'
+        }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to approve course');
+        throw new Error('Failed to approve course');
       }
 
-      toast.success('Course assignment approved successfully');
-      dispatch(fetchCourses());
+      toast.success('Course approved successfully');
+      dispatch(fetchCourses()); // Refresh the courses list
     } catch (error) {
-      toast.error(error.message || 'An error occurred while approving the course');
-      console.error('Error approving course:', error);
+      console.error('Error:', error);
+      toast.error('Failed to approve course');
     }
   };
 
-  const handleReject = async (courseId) => {
+  const handleReject = async (courseId, rejectionReason) => {
     try {
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-      const token = localStorage.getItem('token');
-      
-      const response = await fetch(`${baseURL}/api/v1/courses/${courseId}/reject-assignment`, {
-        method: 'PATCH',
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/v1/courses/${courseId}/dean-review`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({
-          comment: 'Course assignment rejected by department head'
-        })
+          status: 'dean-rejected',
+          rejectionReason
+        }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to reject course');
+        throw new Error('Failed to reject course');
       }
 
-      toast.success('Course assignment rejected successfully');
-      dispatch(fetchCourses());
+      toast.success('Course rejected successfully');
+      dispatch(fetchCourses()); // Refresh the courses list
     } catch (error) {
-      toast.error(error.message || 'An error occurred while rejecting the course');
-      console.error('Error rejecting course:', error);
+      console.error('Error:', error);
+      toast.error('Failed to reject course');
+    }
+  };
+
+  const handleResubmitClick = (course) => {
+    setResubmitCourse(course);
+    setResubmitDialogOpen(true);
+  };
+
+  const handleResubmitConfirm = async () => {
+    if (!resubmitCourse) return;
+
+    try {
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/v1/courses/${resubmitCourse._id}/resubmit-to-dean`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to resubmit course');
+      }
+
+      toast.success('Course resubmitted to School Dean successfully');
+      setResubmitDialogOpen(false);
+      setResubmitCourse(null);
+      dispatch(fetchCourses()); // Refresh the courses list
+    } catch (error) {
+      console.error('Error:', error);
+      toast.error('Failed to resubmit course');
     }
   };
 
@@ -962,6 +1061,7 @@ const Courses = () => {
                   onSelfAssign={handleSelfAssign}
                   onApprove={handleApprove}
                   onReject={handleReject}
+                  onResubmitToDean={handleResubmitClick}
                 />
               </Grid>
             ))}
@@ -1303,6 +1403,67 @@ const Courses = () => {
       </Dialog>
 
       <AssignmentDialog />
+
+      {/* Resubmit Confirmation Dialog */}
+      <Dialog 
+        open={resubmitDialogOpen} 
+        onClose={() => {
+          setResubmitDialogOpen(false);
+          setResubmitCourse(null);
+        }}
+      >
+        <DialogTitle>Confirm Course Resubmission</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to resubmit this course to the School Dean?
+          </DialogContentText>
+          {resubmitCourse && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Course Details:
+              </Typography>
+              <Typography variant="body2">
+                <strong>Code:</strong> {resubmitCourse.code}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Title:</strong> {resubmitCourse.title}
+              </Typography>
+              <Typography variant="body2" color="error" sx={{ mt: 2 }}>
+                Please confirm that you have:
+              </Typography>
+              <Box component="ul" sx={{ mt: 1, mb: 2 }}>
+                <Typography component="li" variant="body2">
+                  • Reviewed the dean's rejection feedback
+                </Typography>
+                <Typography component="li" variant="body2">
+                  • Made necessary changes to address the concerns
+                </Typography>
+                <Typography component="li" variant="body2">
+                  • Verified all course information is correct
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => {
+              setResubmitDialogOpen(false);
+              setResubmitCourse(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <LoadingButton
+            onClick={handleResubmitConfirm}
+            color="primary"
+            variant="contained"
+            startIcon={<SendIcon />}
+          >
+            Confirm Resubmission
+          </LoadingButton>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

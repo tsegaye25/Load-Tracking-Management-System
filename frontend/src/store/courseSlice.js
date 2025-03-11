@@ -206,6 +206,7 @@ const courseSlice = createSlice({
       // Get my courses
       .addCase(getMyCourses.pending, (state) => {
         state.myCoursesLoading = true;
+        state.error = null;
       })
       .addCase(getMyCourses.fulfilled, (state, action) => {
         state.myCoursesLoading = false;
@@ -235,9 +236,10 @@ const courseSlice = createSlice({
       })
       .addCase(assignCourse.fulfilled, (state, action) => {
         state.loading = false;
-        const index = state.courses.findIndex((c) => c._id === action.payload.data.course._id);
+        const updatedCourse = action.payload.data.course;
+        const index = state.courses.findIndex(c => c._id === updatedCourse._id);
         if (index !== -1) {
-          state.courses[index] = action.payload.data.course;
+          state.courses[index] = updatedCourse;
         }
       })
       .addCase(assignCourse.rejected, (state, action) => {
@@ -251,7 +253,7 @@ const courseSlice = createSlice({
       })
       .addCase(updateCourseById.fulfilled, (state, action) => {
         state.loading = false;
-        const index = state.courses.findIndex((c) => c._id === action.payload._id);
+        const index = state.courses.findIndex(c => c._id === action.payload._id);
         if (index !== -1) {
           state.courses[index] = action.payload;
         }
@@ -277,13 +279,13 @@ const courseSlice = createSlice({
 });
 
 export const {
+  clearError,
   setCourses,
   setMyCourses,
   addCourse,
   updateCourse,
   setLoading,
-  setError,
-  clearError,
+  setError
 } = courseSlice.actions;
 
 export default courseSlice.reducer;

@@ -15,10 +15,18 @@ import Profile from './pages/Profile';
 import PublicDashboard from './pages/PublicDashboard';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import SchoolDashboard from './pages/SchoolDashboard';
+import SchoolCourses from './pages/SchoolCourses';
+import SchoolInstructors from './pages/SchoolInstructors';
+import ViceDirectorCourses from './pages/ViceDirectorCourses';
+import ViceDirectorDashboard from './pages/ViceDirectorDashboard';
+import ScientificDirectorDashboard from './pages/ScientificDirectorDashboard';
+import ScientificDirectorCourses from './pages/ScientificDirectorCourses';
 import { useSelector } from 'react-redux';
+import PrivateRoute from './components/PrivateRoute'; // Assuming PrivateRoute is defined in this file
 
 const App = () => {
-  const { isAuthenticated } = useSelector((state) => state.auth);
+  const { isAuthenticated, user } = useSelector((state) => state.auth);
 
   // Wrapper for public pages that includes footer
   const PublicPageWrapper = ({ children }) => (
@@ -87,14 +95,104 @@ const App = () => {
             path="/dashboard"
             element={
               isAuthenticated ? (
-                <Layout>
-                  <Dashboard />
-                </Layout>
+                user?.role === 'school-dean' ? (
+                  <Navigate to="/school-dean/dashboard" replace />
+                ) : user?.role === 'vice-scientific-director' ? (
+                  <Navigate to="/vice-director/dashboard" replace />
+                ) : user?.role === 'scientific-director' ? (
+                  <Navigate to="/scientific-director/dashboard" replace />
+                ) : (
+                  <Layout>
+                    <Dashboard />
+                  </Layout>
+                )
               ) : (
                 <Navigate to="/" replace />
               )
             }
           />
+          {user?.role === 'school-dean' && (
+            <>
+              <Route
+                path="/school-dean/dashboard"
+                element={
+                  <PrivateRoute allowedRoles={['school-dean']}>
+                    <Layout>
+                      <SchoolDashboard />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/school-dean/courses"
+                element={
+                  <PrivateRoute allowedRoles={['school-dean']}>
+                    <Layout>
+                      <SchoolCourses />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/school-dean/instructors"
+                element={
+                  <PrivateRoute allowedRoles={['school-dean']}>
+                    <Layout>
+                      <SchoolInstructors />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+            </>
+          )}
+          {user?.role === 'vice-scientific-director' && (
+            <>
+              <Route
+                path="/vice-director/dashboard"
+                element={
+                  <PrivateRoute allowedRoles={['vice-scientific-director']}>
+                    <Layout>
+                      <ViceDirectorDashboard />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/vice-director/courses"
+                element={
+                  <PrivateRoute allowedRoles={['vice-scientific-director']}>
+                    <Layout>
+                      <ViceDirectorCourses />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+            </>
+          )}
+          {user?.role === 'scientific-director' && (
+            <>
+              <Route
+                path="/scientific-director/dashboard"
+                element={
+                  <PrivateRoute allowedRoles={['scientific-director']}>
+                    <Layout>
+                      <ScientificDirectorDashboard />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/scientific-director/courses"
+                element={
+                  <PrivateRoute allowedRoles={['scientific-director']}>
+                    <Layout>
+                      <ScientificDirectorCourses />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+            </>
+          )}
           <Route
             path="/profile"
             element={
@@ -122,12 +220,12 @@ const App = () => {
           <Route
             path="/courses"
             element={
-              isAuthenticated ? (
+              isAuthenticated && user?.role !== 'school-dean' ? (
                 <Layout>
                   <Courses />
                 </Layout>
               ) : (
-                <Navigate to="/" replace />
+                <Navigate to="/dashboard" replace />
               )
             }
           />

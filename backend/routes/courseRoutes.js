@@ -7,42 +7,121 @@ const router = express.Router();
 // Protect all routes after this middleware
 router.use(authController.protect);
 
-// Routes accessible by both admin and instructors
-router.get('/', authController.restrictTo('admin', 'instructor', 'department-head'), courseController.getAllCourses);
-router.get('/my-courses', courseController.getMyCourses);
-router.get('/:id', authController.restrictTo('admin', 'instructor', 'department-head'), courseController.getCourse);
+// Vice Scientific Director specific routes
+router.get(
+  '/vice-director-courses',
+  authController.restrictTo('vice-scientific-director'),
+  courseController.getViceDirectorCourses
+);
 
-// Allow instructors to self-assign courses
-router.patch(
+router.post(
+  '/:id/vice-director-review',
+  authController.restrictTo('vice-scientific-director'),
+  courseController.reviewCourseByViceDirector
+);
+
+router.get(
+  '/vice-director-dashboard',
+  authController.protect,
+  authController.restrictTo('vice-scientific-director'),
+  courseController.getViceDirectorDashboardStats
+);
+
+// School dean specific routes - these must come before /:id routes
+router.get(
+  '/school-courses',
+  authController.restrictTo('school-dean'),
+  courseController.getSchoolCourses
+);
+
+router.get(
+  '/school-workload',
+  authController.restrictTo('school-dean'),
+  courseController.getSchoolWorkload
+);
+
+router
+  .route('/')
+  .get(courseController.getAllCourses)
+  .post(
+    authController.restrictTo('department-head', 'admin'),
+    courseController.createCourse
+  );
+
+router.get('/my-courses', courseController.getMyCourses);
+
+// Course assignment routes
+router.post(
+  '/:id/assign',
+  authController.restrictTo('department-head'),
+  courseController.assignCourse
+);
+
+router.post(
   '/:id/self-assign',
   authController.restrictTo('instructor'),
   courseController.selfAssignCourse
 );
 
-// Course assignment approval routes
-router.patch(
+router.post(
   '/:id/approve-assignment',
   authController.restrictTo('department-head'),
   courseController.approveCourseAssignment
 );
 
-router.patch(
+router.post(
   '/:id/reject-assignment',
   authController.restrictTo('department-head'),
   courseController.rejectCourseAssignment
 );
 
-// Routes accessible only by admin and department-head
-router.use(authController.restrictTo('department-head', 'admin'));
-router.post('/', courseController.createCourse);
-router.patch('/:id', courseController.updateCourse);
-router.delete('/:id', courseController.deleteCourse);
+// Course review routes
+router.post(
+  '/:id/dean-review',
+  authController.restrictTo('school-dean'),
+  courseController.reviewCourseByDean
+);
+
+// Course resubmission route
+router.post(
+  '/:id/resubmit-to-dean',
+  authController.restrictTo('department-head'),
+  courseController.resubmitToDean
+);
+
+// Scientific director routes
+router.get(
+  '/scientific-director-dashboard',
+  authController.protect,
+  authController.restrictTo('scientific-director'),
+  courseController.getScientificDirectorDashboardStats
+);
+
+router.get(
+  '/scientific-director-courses',
+  authController.protect,
+  authController.restrictTo('scientific-director'),
+  courseController.getScientificDirectorCourses
+);
+
+router.post(
+  '/review-by-scientific-director/:instructorId',
+  authController.protect,
+  authController.restrictTo('scientific-director'),
+  courseController.reviewCourseByScientificDirector
+);
+
+// These routes must come after all specific routes
 router
-  .route('/:id/assign')
+  .route('/:id')
+  .get(courseController.getCourse)
   .patch(
-    authController.protect,
-    authController.restrictTo('admin', 'department-head'),
-    courseController.assignCourse
+    authController.restrictTo('department-head', 'admin'),
+    courseController.updateCourse
+  )
+  .delete(
+    authController.restrictTo('department-head', 'admin'),
+    courseController.deleteCourse
   );
 
 // Course approval routes

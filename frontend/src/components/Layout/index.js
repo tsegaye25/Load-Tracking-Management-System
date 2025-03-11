@@ -23,16 +23,18 @@ import {
   Divider,
   Stack,
   Chip,
+  Link
 } from '@mui/material';
 import {
   Menu as MenuIcon,
+  ChevronLeft as ChevronLeftIcon,
   Dashboard,
-  Book,
-  Person as PersonIcon,
-  ExitToApp as LogoutIcon,
-  People,
-  Feedback as FeedbackIcon,
-  AccountCircle
+  LibraryBooks,
+  Person,
+  School,
+  Assignment,
+  Group,
+  Logout
 } from '@mui/icons-material';
 import Footer from '../Footer';
 
@@ -109,55 +111,176 @@ const Layout = ({ children }) => {
     window.location.href = '/';
   };
 
-  const menuItems = [
+  const adminMenuItems = [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-    { text: 'Courses', icon: <Book />, path: '/courses' },
-    ...(user?.role === 'instructor' || user?.role === 'department-head'
-      ? [{ 
-          text: 'Feedback', 
-          icon: <FeedbackIcon />, 
-          path: '/feedback',
-          badge: unreadCount > 0 ? unreadCount : null
-        }] 
-      : []
-    ),
-    { text: 'Profile', icon: <PersonIcon />, path: '/profile' },
-    ...(user?.role === 'admin' ? [{ text: 'Users', icon: <People />, path: '/users' }] : []),
+    { text: 'Courses', icon: <LibraryBooks />, path: '/courses' },
+    { text: 'Feedback', icon: <Assignment />, path: '/feedback' },
+    { text: 'Profile', icon: <Person />, path: '/profile' },
+    { text: 'Users', icon: <Group />, path: '/users' },
   ];
+
+  const instructorMenuItems = [
+    { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
+    { text: 'Courses', icon: <LibraryBooks />, path: '/courses' },
+    { text: 'Feedback', icon: <Assignment />, path: '/feedback', badge: unreadCount > 0 ? unreadCount : null },
+    { text: 'Profile', icon: <Person />, path: '/profile' },
+  ];
+
+  const departmentHeadMenuItems = [
+    { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
+    { text: 'Courses', icon: <LibraryBooks />, path: '/courses' },
+    { text: 'Feedback', icon: <Assignment />, path: '/feedback', badge: unreadCount > 0 ? unreadCount : null },
+    { text: 'Profile', icon: <Person />, path: '/profile' },
+  ];
+
+  const schoolDeanMenuItems = [
+    { 
+      text: 'Dashboard', 
+      icon: <Dashboard />, 
+      path: '/school-dean/dashboard',
+      description: 'Overview and statistics'
+    },
+    { 
+      text: 'Courses', 
+      icon: <LibraryBooks />, 
+      path: '/school-dean/courses',
+      description: 'Course and workload details'
+    },
+    { 
+      text: 'Profile', 
+      icon: <Person />, 
+      path: '/profile',
+      description: 'Your profile settings'
+    }
+  ];
+
+  const viceDirectorMenuItems = [
+    { 
+      text: 'Dashboard',
+      icon: <Dashboard />,
+      path: '/vice-director/dashboard',
+      description: 'Overview and statistics'
+    },
+    { 
+      text: 'Course Management',
+      icon: <LibraryBooks />,
+      path: '/vice-director/courses',
+      description: 'Review and manage courses'
+    },
+    {
+      text: 'Profile',
+      icon: <Person />,
+      path: '/profile',
+      description: 'Your profile settings'
+    }
+  ];
+
+  const scientificDirectorMenuItems = [
+    { 
+      text: 'Dashboard',
+      icon: <Dashboard />,
+      path: '/scientific-director/dashboard',
+      description: 'Overview and final approval statistics'
+    },
+    { 
+      text: 'Course Management',
+      icon: <LibraryBooks />,
+      path: '/scientific-director/courses',
+      description: 'Final review of approved courses'
+    },
+    {
+      text: 'Profile',
+      icon: <Person />,
+      path: '/profile',
+      description: 'Your profile settings'
+    }
+  ];
+
+  const getMenuItems = () => {
+    switch (user?.role) {
+      case 'admin':
+        return adminMenuItems;
+      case 'instructor':
+        return instructorMenuItems;
+      case 'department-head':
+        return departmentHeadMenuItems;
+      case 'school-dean':
+        return schoolDeanMenuItems;
+      case 'vice-scientific-director':
+        return viceDirectorMenuItems;
+      case 'scientific-director':
+        return scientificDirectorMenuItems;
+      default:
+        return [];
+    }
+  };
+
+  const menuItems = getMenuItems();
 
   const drawer = (
     <Box>
-      <Toolbar>
-        <Typography variant="h6" noWrap component="div" sx={{ color: 'primary.main' }}>
-          LTMS
-        </Typography>
-      </Toolbar>
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Avatar sx={{ bgcolor: 'primary.main' }}>
+          {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+        </Avatar>
+        <Box>
+          <Typography variant="subtitle1">{user?.name}</Typography>
+          <Typography variant="body2" color="textSecondary">
+            {user?.role?.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+          </Typography>
+        </Box>
+      </Box>
       <Divider />
       <List>
         {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
+          <ListItem
+            key={item.text}
+            disablePadding
+            sx={{
+              display: 'block',
+              bgcolor: location.pathname === item.path ? 'action.selected' : 'transparent'
+            }}
+          >
             <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => navigate(item.path)}
+              component={Link}
+              to={item.path}
+              sx={{
+                minHeight: 48,
+                px: 2.5,
+              }}
             >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
+              <ListItemIcon sx={{ minWidth: 0, mr: 2 }}>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText 
+                primary={item.text} 
+                secondary={item.description}
+                primaryTypographyProps={{
+                  variant: 'body1',
+                  color: location.pathname === item.path ? 'primary' : 'textPrimary'
+                }}
+              />
               {item.badge && (
                 <Chip
                   size="small"
                   color="error"
                   label={item.badge}
-                  sx={{
-                    ml: 1,
-                    minWidth: 20,
-                    height: 20,
-                    borderRadius: '10px'
-                  }}
                 />
               )}
             </ListItemButton>
           </ListItem>
         ))}
+      </List>
+      <Divider />
+      <List>
+        <ListItem disablePadding>
+          <ListItemButton onClick={handleLogout}>
+            <ListItemIcon>
+              <Logout />
+            </ListItemIcon>
+            <ListItemText primary="Logout" />
+          </ListItemButton>
+        </ListItem>
       </List>
     </Box>
   );
@@ -379,7 +502,7 @@ const Layout = ({ children }) => {
                   navigate('/profile');
                 }}>
                   <ListItemIcon>
-                    <PersonIcon fontSize="small" />
+                    <Person fontSize="small" />
                   </ListItemIcon>
                   <ListItemText 
                     primary="Profile"
@@ -389,7 +512,7 @@ const Layout = ({ children }) => {
                 <Divider />
                 <MenuItem onClick={handleLogout}>
                   <ListItemIcon>
-                    <LogoutIcon fontSize="small" />
+                    <Logout fontSize="small" />
                   </ListItemIcon>
                   <ListItemText primary="Logout" />
                 </MenuItem>
