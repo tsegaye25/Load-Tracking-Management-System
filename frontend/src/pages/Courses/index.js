@@ -604,11 +604,16 @@ const Courses = () => {
   };
 
   const handleAssignCourse = async () => {
+    if (!selectedInstructor) {
+      toast.error('Please select an instructor');
+      return;
+    }
+
     try {
-      setLoadingInstructors(true); // Using the existing loading state for instructors
+      setLoadingInstructors(true);
       const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
       const response = await fetch(`${baseURL}/api/v1/courses/${selectedCourse._id}/assign`, {
-        method: 'PATCH',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -617,19 +622,19 @@ const Courses = () => {
       });
 
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.message || 'Failed to assign course');
       }
 
       toast.success('Course assigned successfully');
       setOpenAssignDialog(false);
+      setSelectedInstructor('');
       dispatch(fetchCourses());
     } catch (error) {
       console.error('Error assigning course:', error);
       toast.error(error.message || 'Failed to assign course');
     } finally {
-      setLoadingInstructors(false); // Using the existing loading state for instructors
+      setLoadingInstructors(false);
     }
   };
 
