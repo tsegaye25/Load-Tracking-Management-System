@@ -8,23 +8,34 @@ exports.getAllCourses = catchAsync(async (req, res, next) => {
   // Get courses based on user role
   let query = {};
 
-  if (req.user.role === 'instructor') {
-    query = { instructor: req.user._id };
-  } else if (req.user.role === 'department-head') {
-    query = { department: req.user.department };
+  if (req.user.role === 'instructor' || req.user.role === 'department-head') {
+    // For instructors and department heads, get all courses in their school
+    query = { school: req.user.school };
   } else if (req.user.role === 'school-dean') {
-    query = { 
-      school: req.user.school,
-      instructor: { $exists: true, $ne: null } // Only get courses with assigned instructors
-    };
+    query = { school: req.user.school };
   }
+
 
   const courses = await Course.find(query)
     .populate({
       path: 'instructor',
       select: 'name email department school'
     })
+    .populate({
+      path: 'requestedBy',
+      select: 'name email department school'
+    })
     .sort({ department: 1, classYear: 1, semester: 1 });
+
+  
+  if (!courses || courses.length === 0) {
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        courses: []
+      }
+    });
+  }
 
   res.status(200).json({
     status: 'success',
@@ -108,7 +119,21 @@ exports.deleteCourse = catchAsync(async (req, res, next) => {
   }
 
   // Check department head permission
-  await checkDepartmentHeadPermission(req, course);
+  if (req.user.role === 'department-head') {
+    if (course.department !== req.user.department || course.school !== req.user.school) {
+      return next(new AppError('You can only delete courses from your department', 403));
+    }
+
+    // Check if course has an instructor assigned
+    if (course.instructor) {
+      return next(new AppError('Cannot delete a course that has an instructor assigned', 400));
+    }
+
+    // Check if course is in approval process
+    if (course.status !== 'unassigned' && course.status !== 'pending') {
+      return next(new AppError('Cannot delete a course that is in the approval process', 400));
+    }
+  }
 
   // Only allow certain roles to delete courses
   if (!['admin', 'department-head'].includes(req.user.role)) {
@@ -189,19 +214,31 @@ exports.assignCourse = catchAsync(async (req, res, next) => {
 
 exports.selfAssignCourse = catchAsync(async (req, res, next) => {
   // Get the course
-  const course = await Course.findById(req.params.id);
+  const course = await Course.findById(req.params.id)
+    .populate('requestedBy', 'name email _id');
+    
   if (!course) {
     return next(new AppError('No course found with that ID', 404));
   }
 
-  // Check if course is already assigned or pending approval
-  if (course.status !== 'unassigned') {
-    return next(new AppError('This course is not available for selection', 400));
+  // Check if course is already assigned
+  if (course.instructor) {
+    return next(new AppError('This course is already assigned to an instructor', 400));
   }
 
-  // Check if course is from instructor's school
-  if (course.school !== req.user.school) {
-    return next(new AppError('You can only select courses from your school', 403));
+  // Check if course is pending approval
+  if (course.status === 'pending') {
+    return next(new AppError('This course is pending approval', 400));
+  }
+
+  // Check if course was previously rejected for this instructor
+  if (course.status === 'rejected' && course.requestedBy?._id.toString() === req.user._id.toString()) {
+    return next(new AppError('You cannot request this course again as it was previously rejected', 400));
+  }
+
+  // Check if course is from instructor's department and school
+  if (course.department !== req.user.department || course.school !== req.user.school) {
+    return next(new AppError('You can only select courses from your department', 403));
   }
 
   // Update course status to pending and store the requesting instructor
@@ -211,6 +248,7 @@ exports.selfAssignCourse = catchAsync(async (req, res, next) => {
     status: 'pending',
     approver: req.user._id,
     role: 'instructor',
+    date: Date.now(),
     comment: 'Course selection request submitted'
   });
 
@@ -356,6 +394,7 @@ exports.rejectCourseAssignment = catchAsync(async (req, res, next) => {
     status: 'rejected',
     approver: req.user._id,
     role: 'department-head',
+    date: Date.now(),
     comment: req.body.comment || 'Course assignment rejected'
   });
 
@@ -917,7 +956,9 @@ exports.reviewCourseByViceDirector = catchAsync(async (req, res, next) => {
 
   res.status(200).json({
     status: 'success',
-    data: course
+    data: {
+      course
+    }
   });
 });
 
@@ -1073,7 +1114,7 @@ exports.getScientificDirectorCourses = async (req, res) => {
         (course.position || 0) +
         (course.branchAdvisor || 0)
       );
-
+      
       course.totalHours = workload;
       acc[instructorId].totalWorkload += workload;
       acc[instructorId].courses.push(course);
@@ -1284,3 +1325,251 @@ exports.getScientificDirectorDashboardStats = async (req, res) => {
     });
   }
 };
+
+// Department Head course review
+exports.reviewCourseByDepartmentHead = catchAsync(async (req, res, next) => {
+  const { status, rejectionReason } = req.body;
+
+  // Validate status and rejection reason
+  if (!['approved', 'rejected'].includes(status)) {
+    return next(new AppError('Invalid status. Must be approved or rejected', 400));
+  }
+
+  if (status === 'rejected' && !rejectionReason?.trim()) {
+    return next(new AppError('Rejection reason is required when rejecting a course', 400));
+  }
+
+  const course = await Course.findById(req.params.id)
+    .populate({
+      path: 'instructor',
+      select: 'name email department school'
+    })
+    .populate({
+      path: 'requestedBy',
+      select: 'name email department school currentWorkload'
+    });
+
+  if (!course) {
+    return next(new AppError('No course found with that ID', 404));
+  }
+
+  // Verify user is department head and course belongs to their department
+  if (req.user.role !== 'department-head' || 
+      course.department !== req.user.department || 
+      course.school !== req.user.school) {
+    return next(new AppError('You do not have permission to review this course', 403));
+  }
+
+  // Update course status and handle instructor assignment
+  course.status = status;
+  
+  if (status === 'approved') {
+    // If approved, assign the requesting instructor to the course
+    if (!course.requestedBy) {
+      return next(new AppError('No instructor has requested this course', 400));
+    }
+    
+    course.instructor = course.requestedBy._id;
+    course.requestedBy = undefined; // Clear the request
+    
+    // Add to approval history
+    course.approvalHistory.push({
+      status: 'approved',
+      approver: req.user._id,
+      role: 'department-head',
+      date: Date.now(),
+      comment: `Course assigned to ${course.instructor.name}`,
+      department: req.user.department,
+      school: req.user.school
+    });
+
+    // Update instructor's workload if needed
+    try {
+      await User.findByIdAndUpdate(course.instructor, {
+        $inc: { currentWorkload: course.creditHours }
+      });
+    } catch (error) {
+      console.error('Error updating instructor workload:', error);
+    }
+  } else {
+    // Store rejection details including the rejected instructor's info
+    const rejectedInstructor = course.requestedBy;
+    course.rejectionReason = rejectionReason.trim();
+    course.rejectionDate = new Date();
+    course.rejectedBy = {
+      user: req.user._id,
+      role: 'department-head',
+      date: new Date()
+    };
+    course.rejectedInstructor = {
+      id: rejectedInstructor._id,
+      name: rejectedInstructor.name,
+      email: rejectedInstructor.email,
+      department: rejectedInstructor.department
+    };
+    
+    // Clear requestedBy after storing rejection info
+    course.requestedBy = undefined;
+    
+    // Add to approval history
+    course.approvalHistory.push({
+      status: 'rejected',
+      approver: req.user._id,
+      role: 'department-head',
+      date: Date.now(),
+      comment: `Rejected request from ${rejectedInstructor.name}: ${rejectionReason}`,
+      department: req.user.department,
+      school: req.user.school
+    });
+  }
+
+  await course.save();
+
+  // Send notifications based on the decision
+  try {
+    const emailInstance = new Email();
+    
+    if (status === 'approved') {
+      // 1. Notify the approved instructor
+      if (course.instructor && course.instructor.email) {
+        await emailInstance.send({
+          email: course.instructor.email,
+          subject: `Course Assignment Approved: ${course.code}`,
+          message: `
+            Dear ${course.instructor.name},
+
+            Your request to teach the following course has been approved:
+            
+            Course Details:
+            - Code: ${course.code}
+            - Title: ${course.title}
+            - Department: ${course.department}
+            - School: ${course.school}
+            - Credit Hours: ${course.creditHours}
+            
+            Review Details:
+            - Approved By: ${req.user.name}
+            - Department: ${req.user.department}
+            - Date: ${new Date().toLocaleString()}
+            
+            The course has been added to your teaching load.
+            
+            Best regards,
+            LTMS System
+          `
+        });
+      }
+
+      // 2. Notify school dean about the new course assignment
+      const schoolDean = await User.findOne({ 
+        role: 'school-dean',
+        school: course.school
+      });
+      
+      if (schoolDean && schoolDean.email) {
+        await emailInstance.send({
+          email: schoolDean.email,
+          subject: 'New Course Assignment: ${course.code}',
+          message: `
+            Dear School Dean,
+
+            A new course assignment has been approved:
+            
+            Course Details:
+            - Code: ${course.code}
+            - Title: ${course.title}
+            - Department: ${course.department}
+            - School: ${course.school}
+            - Credit Hours: ${course.creditHours}
+            
+            Instructor Details:
+            - Name: ${course.instructor.name}
+            - Department: ${course.instructor.department}
+            
+            Approved By:
+            - Name: ${req.user.name}
+            - Department: ${req.user.department}
+            - Date: ${new Date().toLocaleString()}
+            
+            Best regards,
+            LTMS System
+          `
+        });
+      }
+    } else {
+      // 1. Send rejection notification to the requesting instructor
+      if (course.rejectedInstructor.email) {
+        await emailInstance.send({
+          email: course.rejectedInstructor.email,
+          subject: `Course Request Rejected: ${course.code}`,
+          message: `
+            Dear ${course.rejectedInstructor.name},
+
+            Your request to teach the following course has been rejected:
+            
+            Course Details:
+            - Code: ${course.code}
+            - Title: ${course.title}
+            - Department: ${course.department}
+            - School: ${course.school}
+            - Credit Hours: ${course.creditHours}
+            
+            Review Details:
+            - Reviewed By: ${req.user.name}
+            - Department: ${req.user.department}
+            - Date: ${new Date().toLocaleString()}
+            
+            Rejection Reason:
+            ${rejectionReason}
+            
+            If you have any questions, please contact your Department Head.
+            
+            Best regards,
+            LTMS System
+          `
+        });
+      }
+
+      // 2. Notify other eligible instructors that the course is available
+      const eligibleInstructors = await User.find({
+        role: 'instructor',
+        department: course.department,
+        school: course.school,
+        _id: { $ne: course.rejectedInstructor.id } // Exclude rejected instructor
+      });
+
+      for (const instructor of eligibleInstructors) {
+        await emailInstance.send({
+          email: instructor.email,
+          subject: `Course Available for Request: ${course.code}`,
+          message: `
+            Dear ${instructor.name},
+
+            A course in your department is available for teaching request:
+            
+            Course Details:
+            - Code: ${course.code}
+            - Title: ${course.title}
+            - Department: ${course.department}
+            - School: ${course.school}
+            - Credit Hours: ${course.creditHours}
+            
+            If you are interested in teaching this course, you can submit a request through the LTMS system.
+            
+            Best regards,
+            LTMS System
+          `
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error sending notification emails:', error);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      course
+    }
+  });
+});

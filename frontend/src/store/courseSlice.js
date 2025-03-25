@@ -10,6 +10,8 @@ const initialState = {
   loading: false,
   error: null,
   myCoursesLoading: false,
+  myCoursesError: null,
+  instructorWorkloads: {}
 };
 
 // Thunk actions
@@ -18,18 +20,21 @@ export const fetchCourses = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token');
+      
       const response = await axios.get(`${baseURL}/api/v1/courses`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
+      
+      if (!response.data.data.courses) {
+        console.error('Invalid courses data format:', response.data);
+        throw new Error('Invalid courses data received');
+      }
       return response.data;
     } catch (error) {
-      if (error.response?.data?.message) {
-        toast.error(error.response.data.message);
-      } else {
-        toast.error('Error fetching courses');
-      }
+      console.error('Error fetching courses:', error.response?.data || error.message);
+      toast.error(error.response?.data?.message || 'Error fetching courses');
       return rejectWithValue(error.response?.data || 'Error fetching courses');
     }
   }
@@ -45,6 +50,10 @@ export const getMyCourses = createAsyncThunk(
           Authorization: `Bearer ${token}`
         }
       });
+      if (!response.data.data.courses) {
+        console.error('Invalid my courses data format:', response.data);
+        throw new Error('Invalid my courses data received');
+      }
       return response.data;
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error fetching your courses');
@@ -80,6 +89,10 @@ export const createCourse = createAsyncThunk(
           Authorization: `Bearer ${token}`
         }
       });
+      if (!response.data.data.course) {
+        console.error('Invalid course data format:', response.data);
+        throw new Error('Invalid course data received');
+      }
       toast.success('Course created successfully!');
       return response.data;
     } catch (error) {
@@ -101,6 +114,10 @@ export const assignCourse = createAsyncThunk(
           Authorization: `Bearer ${token}`
         }
       });
+      if (!response.data.data.course) {
+        console.error('Invalid course data format:', response.data);
+        throw new Error('Invalid course data received');
+      }
       return response.data;
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to assign course');
@@ -128,6 +145,10 @@ export const updateCourseById = createAsyncThunk(
       }
 
       const data = await response.json();
+      if (!data.data.course) {
+        console.error('Invalid course data format:', data);
+        throw new Error('Invalid course data received');
+      }
       return data.data.course;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -139,27 +160,28 @@ export const deleteCourse = createAsyncThunk(
   'courses/deleteCourse',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${baseURL}/api/v1/courses/${id}`, {
-        method: 'DELETE',
+      const token = localStorage.getItem('token');
+      const response = await axios.delete(`${baseURL}/api/v1/courses/${id}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          Authorization: `Bearer ${token}`
         }
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to delete course');
+      if (response.status === 204) {
+        toast.success('Course deleted successfully');
+        return id;
       }
 
-      return id;
+      throw new Error('Failed to delete course');
     } catch (error) {
-      return rejectWithValue(error.message);
+      toast.error(error.response?.data?.message || 'Failed to delete course');
+      return rejectWithValue(error.response?.data || 'Failed to delete course');
     }
   }
 );
 
 const courseSlice = createSlice({
-  name: 'course',
+  name: 'courses',
   initialState,
   reducers: {
     clearError: (state) => {
@@ -178,6 +200,7 @@ const courseSlice = createSlice({
       const index = state.courses.findIndex((c) => c._id === payload._id);
       if (index !== -1) {
         state.courses[index] = payload;
+        
       }
     },
     setLoading: (state, { payload }) => {
@@ -197,24 +220,52 @@ const courseSlice = createSlice({
       })
       .addCase(fetchCourses.fulfilled, (state, action) => {
         state.loading = false;
+        if (!action.payload.data.courses) {
+          state.error = 'Invalid courses data received';
+          return;
+        }
         state.courses = action.payload.data.courses;
+        state.error = null;
+
+        // Update instructor workloads
+        const workloads = {};
+        action.payload.data.courses.forEach(course => {
+          if (course.instructor) {
+            const id = course.instructor._id;
+            if (!workloads[id]) {
+              workloads[id] = {
+                totalHours: 0,
+                courses: []
+              };
+            }
+            workloads[id].totalHours += course.creditHours || 0;
+            workloads[id].courses.push(course);
+          }
+        });
+        state.instructorWorkloads = workloads;
       })
       .addCase(fetchCourses.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
+        console.error('Failed to fetch courses:', action.payload);
       })
       // Get my courses
       .addCase(getMyCourses.pending, (state) => {
         state.myCoursesLoading = true;
-        state.error = null;
+        state.myCoursesError = null;
       })
       .addCase(getMyCourses.fulfilled, (state, action) => {
         state.myCoursesLoading = false;
+        if (!action.payload.data.courses) {
+          console.error('Invalid my courses data in fulfilled:', action.payload);
+          state.myCoursesError = 'Invalid my courses data received';
+          return;
+        }
         state.myCourses = action.payload.data.courses;
       })
       .addCase(getMyCourses.rejected, (state, action) => {
         state.myCoursesLoading = false;
-        state.error = action.payload;
+        state.myCoursesError = action.payload;
       })
       // Create course
       .addCase(createCourse.pending, (state) => {
@@ -270,6 +321,7 @@ const courseSlice = createSlice({
       .addCase(deleteCourse.fulfilled, (state, action) => {
         state.loading = false;
         state.courses = state.courses.filter(course => course._id !== action.payload);
+        state.myCourses = state.myCourses.filter(course => course._id !== action.payload);
       })
       .addCase(deleteCourse.rejected, (state, action) => {
         state.loading = false;

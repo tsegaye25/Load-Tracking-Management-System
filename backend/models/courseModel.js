@@ -127,6 +127,32 @@ const courseSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  rejectionDate: {
+    type: Date
+  },
+  rejectedBy: {
+    user: {
+      type: mongoose.Schema.ObjectId,
+      ref: 'User'
+    },
+    role: {
+      type: String,
+      enum: ['department-head', 'school-dean', 'vice-director']
+    },
+    date: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  rejectedInstructor: {
+    id: {
+      type: mongoose.Schema.ObjectId,
+      ref: 'User'
+    },
+    name: String,
+    email: String,
+    department: String
+  },
   deanRejectionDate: {
     type: Date
   },
@@ -175,9 +201,14 @@ courseSchema.pre(/^find/, function(next) {
   this.populate({
     path: 'instructor',
     select: 'name email department school'
-  }).populate({
+  })
+  .populate({
     path: 'requestedBy',
-    select: 'name email department'
+    select: 'name email department school'
+  })
+  .populate({
+    path: 'rejectedBy.user',
+    select: 'name role department school'
   });
   next();
 });

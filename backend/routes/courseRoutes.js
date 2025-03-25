@@ -77,6 +77,12 @@ router.post(
 
 // Course review routes
 router.post(
+  '/:id/department-head-review',
+  authController.restrictTo('department-head'),
+  courseController.reviewCourseByDepartmentHead
+);
+
+router.post(
   '/:id/dean-review',
   authController.restrictTo('school-dean'),
   courseController.reviewCourseByDean

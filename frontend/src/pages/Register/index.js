@@ -48,9 +48,7 @@ const Register = () => {
     }),
     onSubmit: async (values) => {
       try {
-        console.log('Submitting registration form with values:', values);
         const result = await dispatch(register(values));
-        console.log('Registration response:', result);
         if (result) {
           navigate('/');
         }
