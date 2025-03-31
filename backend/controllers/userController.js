@@ -81,7 +81,25 @@ exports.updateMe = catchAsync(async (req, res, next) => {
     );
   }
 
-  const filteredBody = filterObj(req.body, 'name', 'email', 'phone', 'department', 'school');
+  // Validate hour fields if provided
+  const hourFields = ['hdpHour', 'positionHour', 'batchAdvisor'];
+  for (const field of hourFields) {
+    if (req.body[field] !== undefined && req.body[field] < 0) {
+      return next(new AppError(`${field} cannot be negative`, 400));
+    }
+  }
+
+  const filteredBody = filterObj(
+    req.body, 
+    'name', 
+    'email', 
+    'phone', 
+    'department', 
+    'school',
+    'hdpHour',
+    'positionHour',
+    'batchAdvisor'
+  );
 
   if (req.file) {
     // Get current user to check for existing avatar
@@ -105,13 +123,11 @@ exports.updateMe = catchAsync(async (req, res, next) => {
     runValidators: true
   });
 
-  if (!updatedUser) {
-    return next(new AppError('Error updating user profile', 400));
-  }
-
   res.status(200).json({
     status: 'success',
-    data: updatedUser
+    data: {
+      user: updatedUser
+    }
   });
 });
 
@@ -144,8 +160,7 @@ exports.updateProfile = catchAsync(async (req, res) => {
     email: req.body.email,
     phone: req.body.phone,
     school: req.body.school,
-    department: req.body.department,
-    position: req.body.position
+    department: req.body.department
   };
 
   // Add avatar to update only if a new file is uploaded
@@ -173,83 +188,71 @@ if (req.file) {
 });
 
 exports.getAllUsers = catchAsync(async (req, res, next) => {
-  const users = await User.find()
-    .populate({
-      path: 'courses',
-      select: 'title code totalHours school department instructor',
-      populate: {
-        path: 'instructor',
-        select: 'name'
-      }
-    });
-
-  // For each instructor, also get courses where they are assigned as instructor
-  const usersWithAllCourses = await Promise.all(users.map(async user => {
-    if (user.role === 'instructor') {
-      const assignedCourses = await Course.find({ instructor: user._id })
-        .select('title code totalHours school department');
-      
-      // Convert to plain object to modify
-      const userObj = user.toObject();
-      
-      // Ensure no duplicate courses
-      const courseIds = new Set(userObj.courses.map(c => c._id.toString()));
-      const additionalCourses = assignedCourses.filter(c => !courseIds.has(c._id.toString()));
-      
-      userObj.courses = [...userObj.courses, ...additionalCourses];
-      return userObj;
-    }
-    return user;
-  }));
+  const users = await User.find().select('name email role department school phone hdpHour positionHour batchAdvisor');
 
   res.status(200).json({
     status: 'success',
     data: {
-      users: usersWithAllCourses
+      users
     }
   });
 });
 
 exports.getUser = catchAsync(async (req, res, next) => {
-  let user = await User.findById(req.params.id)
-    .populate({
-      path: 'courses',
-      select: 'title code totalHours school department instructor',
-      populate: {
-        path: 'instructor',
-        select: 'name'
-      }
-    });
+  const user = await User.findById(req.params.id).select('+password');
 
   if (!user) {
     return next(new AppError('No user found with that ID', 404));
   }
 
-  if (user.role === 'instructor') {
-    const assignedCourses = await Course.find({ instructor: user._id })
-      .select('title code totalHours school department');
-    
-    // Convert to plain object to modify
-    const userObj = user.toObject();
-    
-    // Ensure no duplicate courses
-    const courseIds = new Set(userObj.courses.map(c => c._id.toString()));
-    const additionalCourses = assignedCourses.filter(c => !courseIds.has(c._id.toString()));
-    
-    userObj.courses = [...userObj.courses, ...additionalCourses];
-    user = userObj;
-  }
+  // Calculate total hours
+  const totalHours = (user.hdpHour || 0) + (user.positionHour || 0) + (user.batchAdvisor || 0);
+
+  // Format response
+  const userResponse = {
+    ...user.toObject(),
+    password: undefined,
+    totalHours
+  };
 
   res.status(200).json({
     status: 'success',
     data: {
-      user
+      user: userResponse
     }
   });
 });
 
 exports.createUser = catchAsync(async (req, res, next) => {
-  const newUser = await User.create(req.body);
+  // Validate required fields
+  const requiredFields = ['name', 'email', 'phone', 'role', 'password', 'passwordConfirm'];
+  for (const field of requiredFields) {
+    if (!req.body[field]) {
+      return next(new AppError(`Please provide ${field}`, 400));
+    }
+  }
+
+  // Validate hour fields are non-negative numbers
+  const hourFields = ['hdpHour', 'positionHour', 'batchAdvisor'];
+  for (const field of hourFields) {
+    if (req.body[field] && req.body[field] < 0) {
+      return next(new AppError(`${field} cannot be negative`, 400));
+    }
+  }
+
+  // Set default values for hour fields if not provided
+  const newUserData = {
+    ...req.body,
+    hdpHour: req.body.hdpHour || 0,
+    positionHour: req.body.positionHour || 0,
+    batchAdvisor: req.body.batchAdvisor || 0
+  };
+
+  // Create the new user
+  const newUser = await User.create(newUserData);
+
+  // Remove password from output
+  newUser.password = undefined;
 
   res.status(201).json({
     status: 'success',
@@ -265,11 +268,13 @@ exports.updateUser = catchAsync(async (req, res, next) => {
     req.body,
     'name',
     'email',
+    'phone',
     'role',
     'school',
     'department',
-    'phone',
-    'active'
+    'hdpHour',
+    'positionHour',
+    'batchAdvisor'
   );
 
   const user = await User.findByIdAndUpdate(req.params.id, filteredBody, {
@@ -417,7 +422,7 @@ exports.getInstructors = catchAsync(async (req, res) => {
 });
 
 exports.deleteUser = catchAsync(async (req, res, next) => {
-  const user = await User.findByIdAndDelete(req.params.id);
+  const user = await User.findByIdAndDelete(req.params.id, { new: true });
 
   if (!user) {
     return next(new AppError('No user found with that ID', 404));
@@ -438,57 +443,29 @@ exports.getSchoolInstructors = catchAsync(async (req, res, next) => {
   // Get all users in the school
   const users = await User.find({ 
     school: dean.school,
-  }).select('name email role department totalLoad overloadHours salary');
-
-  // Get all courses for instructors
-  const courses = await Course.find({
-    school: dean.school,
-    instructor: { $exists: true, $ne: null }
-  }).populate('instructor', 'name email');
-
-  // Group courses by instructor
-  const instructorCourses = {};
-  courses.forEach(course => {
-    const instructorId = course.instructor._id.toString();
-    if (!instructorCourses[instructorId]) {
-      instructorCourses[instructorId] = [];
-    }
-    instructorCourses[instructorId].push(course);
-  });
-
-  // Calculate statistics and combine data
-  const instructorStats = users.map(user => {
-    const userCourses = instructorCourses[user._id.toString()] || [];
-    const courseCount = userCourses.length;
-    const totalCreditHours = userCourses.reduce((sum, course) => sum + course.creditHours, 0);
-    
-    return {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      department: user.department,
-      totalLoad: user.totalLoad || 0,
-      overloadHours: user.overloadHours || 0,
-      salary: user.salary || 0,
-      courseCount,
-      totalCreditHours,
-      courses: userCourses.map(course => ({
-        _id: course._id,
-        code: course.code,
-        title: course.title,
-        creditHours: course.creditHours,
-        classYear: course.classYear,
-        department: course.department
-      }))
-    };
-  });
+  }).select('name email role department phone hdpHour positionHour batchAdvisor totalLoad');
 
   res.status(200).json({
     status: 'success',
     data: {
-      school: dean.school,
-      instructorStats
+      users
+    }
+  });
+});
+
+exports.getUserHours = catchAsync(async (req, res, next) => {
+  const user = await User.findById(req.params.id).select('hdpHour positionHour batchAdvisor');
+  
+  if (!user) {
+    return next(new AppError('No user found with that ID', 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      hdpHour: user.hdpHour || 0,
+      positionHour: user.positionHour || 0,
+      batchAdvisor: user.batchAdvisor || 0
     }
   });
 });

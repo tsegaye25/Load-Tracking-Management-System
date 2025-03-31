@@ -34,10 +34,28 @@ router.get(
   courseController.getSchoolCourses
 );
 
+router.post(
+  '/bulk-dean-review',
+  authController.restrictTo('school-dean'),
+  courseController.bulkReviewCoursesByDean
+);
+
 router.get(
   '/school-workload',
   authController.restrictTo('school-dean'),
   courseController.getSchoolWorkload
+);
+
+router.post(
+  '/resubmit-to-vice-director',
+  authController.restrictTo('school-dean'),
+  courseController.resubmitToViceDirector
+);
+
+router.post(
+  '/reject-to-department',
+  authController.restrictTo('school-dean'),
+  courseController.rejectToDepartment
 );
 
 router
@@ -95,6 +113,22 @@ router.post(
   courseController.resubmitToDean
 );
 
+// Resubmit rejected courses to Vice Director
+router.post(
+  '/resubmit-to-vice-director',
+  authController.protect,
+  authController.restrictTo('school-dean'),
+  courseController.resubmitToViceDirector
+);
+
+// Reject courses and return to department head
+router.post(
+  '/reject-to-department',
+  authController.protect,
+  authController.restrictTo('school-dean'),
+  courseController.rejectToDepartment
+);
+
 // Scientific director routes
 router.get(
   '/scientific-director-dashboard',
@@ -115,6 +149,20 @@ router.post(
   authController.protect,
   authController.restrictTo('scientific-director'),
   courseController.reviewCourseByScientificDirector
+);
+
+router.post(
+  '/scientific-director/bulk-approve/:instructorId',
+  authController.protect,
+  authController.restrictTo('scientific-director'),
+  courseController.bulkApproveByScientificDirector
+);
+
+router.post(
+  '/bulk-approve-vice-director/:instructorId',
+  authController.protect,
+  authController.restrictTo('vice-scientific-director'),
+  courseController.bulkApproveByViceDirector
 );
 
 // These routes must come after all specific routes

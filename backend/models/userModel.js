@@ -85,10 +85,35 @@ const userSchema = new mongoose.Schema({
       message: 'Invalid department for the selected school'
     }
   },
-  position: String,
+  positionHour: {
+    type: Number,
+    default: 0,
+    validate: {
+      validator: function(val) {
+        return val >= 0;
+      },
+      message: 'Position hours cannot be negative'
+    }
+  },
+  hdpHour: {
+    type: Number,
+    default: 0,
+    validate: {
+      validator: function(val) {
+        return val >= 0;
+      },
+      message: 'HDP hours cannot be negative'
+    }
+  },
   batchAdvisor: {
     type: Number,
-    default: 0
+    default: 0,
+    validate: {
+      validator: function(val) {
+        return val >= 0;
+      },
+      message: 'Batch advisor hours cannot be negative'
+    }
   },
   avatar: {
     type: String,

@@ -72,10 +72,14 @@ const SchoolDashboard = () => {
           let overloadedInstructors = 0;
 
           // Process instructors data
-          instructorsData.data.instructorStats.forEach(instructor => {
-            if (instructor.role === 'instructor') {
+          if (Array.isArray(instructorsData.data.instructors)) {
+            instructorsData.data.instructors.forEach(instructor => {
               totalInstructors++;
-              if (instructor.overloadHours > 0) {
+              // Calculate overload based on total hours
+              const totalHours = (instructor.hdpHour || 0) + 
+                               (instructor.positionHour || 0) + 
+                               (instructor.batchAdvisor || 0);
+              if (totalHours > 39) { // Assuming 39 is the maximum normal load
                 overloadedInstructors++;
               }
               if (instructor.department) {
@@ -88,26 +92,28 @@ const SchoolDashboard = () => {
                   };
                 }
                 departmentStats[instructor.department].instructors++;
-                if (instructor.overloadHours > 0) {
+                if (totalHours > 39) {
                   departmentStats[instructor.department].overloadedInstructors++;
                 }
               }
-            }
-          });
+            });
+          }
 
           // Process courses data
-          Object.entries(coursesData.data.departments).forEach(([dept, courses]) => {
-            departments.add(dept);
-            if (!departmentStats[dept]) {
-              departmentStats[dept] = {
-                instructors: 0,
-                courses: 0,
-                overloadedInstructors: 0
-              };
-            }
-            departmentStats[dept].courses += courses.length;
-            totalCourses += courses.length;
-          });
+          if (coursesData.data.departments) {
+            Object.entries(coursesData.data.departments).forEach(([dept, courses]) => {
+              departments.add(dept);
+              if (!departmentStats[dept]) {
+                departmentStats[dept] = {
+                  instructors: 0,
+                  courses: 0,
+                  overloadedInstructors: 0
+                };
+              }
+              departmentStats[dept].courses += courses.length;
+              totalCourses += courses.length;
+            });
+          }
 
           // Prepare chart data
           const departmentChartData = Object.entries(departmentStats).map(([dept, stats]) => ({

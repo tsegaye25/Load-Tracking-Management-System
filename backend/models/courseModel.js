@@ -119,7 +119,14 @@ const courseSchema = new mongoose.Schema({
       'dean-rejected',
       'vice-director-review',
       'vice-director-approved',
-      'vice-director-rejected'
+      'vice-director-rejected',
+      'scientific-director-review',
+      'scientific-director-approved',
+      'scientific-director-rejected',
+      'finance-review',
+      'finance-approved',
+      'finance-rejected',
+      'resubmitted-to-dean'
     ],
     default: 'unassigned'
   },
@@ -162,13 +169,20 @@ const courseSchema = new mongoose.Schema({
       enum: [
         'pending', 
         'approved', 
-        'rejected',
+        'rejected', 
+        'unassigned',
         'dean-review',
         'dean-approved',
         'dean-rejected',
         'vice-director-review',
         'vice-director-approved',
         'vice-director-rejected',
+        'scientific-director-review',
+        'scientific-director-approved',
+        'scientific-director-rejected',
+        'finance-review',
+        'finance-approved',
+        'finance-rejected',
         'resubmitted-to-dean'
       ]
     },
@@ -176,12 +190,22 @@ const courseSchema = new mongoose.Schema({
       type: mongoose.Schema.ObjectId,
       ref: 'User'
     },
-    role: String,
-    comment: String,
+    role: {
+      type: String,
+      enum: [
+        'instructor',
+        'department-head', 
+        'school-dean', 
+        'vice-scientific-director', 
+        'scientific-director', 
+        'finance'
+      ]
+    },
     date: {
       type: Date,
       default: Date.now
-    }
+    },
+    comment: String
   }],
   totalHours: {
     type: Number,

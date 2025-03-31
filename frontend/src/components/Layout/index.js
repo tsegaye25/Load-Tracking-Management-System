@@ -114,7 +114,6 @@ const Layout = ({ children }) => {
   const adminMenuItems = [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Courses', icon: <LibraryBooks />, path: '/courses' },
-    { text: 'Feedback', icon: <Assignment />, path: '/feedback' },
     { text: 'Profile', icon: <Person />, path: '/profile' },
     { text: 'Users', icon: <Group />, path: '/users' },
   ];

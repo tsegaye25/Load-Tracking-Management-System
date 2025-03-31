@@ -41,6 +41,29 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
   const { user } = useSelector((state) => state.auth);
   const isInstructor = user?.role === 'instructor';
   const isDepartmentHead = user?.role === 'department-head';
+  const [instructorHours, setInstructorHours] = useState(null);
+
+  useEffect(() => {
+    const fetchInstructorHours = async () => {
+      if (course.instructor) {
+        try {
+          const response = await fetch(`http://localhost:5000/api/v1/users/hours/${course.instructor._id}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          const data = await response.json();
+          if (data.status === 'success') {
+            setInstructorHours(data.data);
+          }
+        } catch (error) {
+          console.error('Error fetching instructor hours:', error);
+        }
+      }
+    };
+
+    fetchInstructorHours();
+  }, [course.instructor]);
 
   // Department Head Permissions
   const canReviewCourse = isDepartmentHead && 
@@ -229,17 +252,17 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
       </AccordionSummary>
       <AccordionDetails>
         <Grid container spacing={3}>
-          {/* Course Information - First Row */}
+          {/* Course and Instructor Information - First Row */}
           <Grid item xs={12} md={6}>
             <Typography variant="subtitle1" color="primary" gutterBottom>
-              Course Information
+              Course Details
             </Typography>
             <Box sx={{ ml: 2 }}>
               <Typography variant="body2">
-                <strong>Class Year:</strong> {course.classYear} Year
+                <strong>Code:</strong> {course.code}
               </Typography>
               <Typography variant="body2">
-                <strong>Semester:</strong> {course.semester} Semester
+                <strong>Title:</strong> {course.title}
               </Typography>
               <Typography variant="body2">
                 <strong>School:</strong> {course.school}
@@ -249,80 +272,58 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
               </Typography>
               {course.instructor && (
                 <>
+                  <Divider sx={{ my: 1 }} />
                   <Typography variant="body2">
                     <strong>Instructor:</strong> {course.instructor.name}
                   </Typography>
-                  <Typography variant="body2">
-                    <strong>Instructor Email:</strong> {course.instructor.email}
-                  </Typography>
-                  <Typography variant="body2">
-                    <strong>Department:</strong> {course.instructor.department}
-                  </Typography>
+                  {instructorHours && (
+                    <>
+                      <Typography variant="body2">
+                        <strong>HDP Hours:</strong> {instructorHours.hdpHour}
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>Position Hours:</strong> {instructorHours.positionHour}
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>Batch Advisor Hours:</strong> {instructorHours.batchAdvisor}
+                      </Typography>
+                      <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold', color: 'primary.main' }}>
+                        <strong>Total Hours:</strong> {instructorHours.hdpHour + instructorHours.positionHour + instructorHours.batchAdvisor}
+                      </Typography>
+                    </>
+                  )}
                 </>
               )}
             </Box>
           </Grid>
 
-          {/* Credit Hours - First Row */}
+          {/* Hours Information - Second Row */}
           <Grid item xs={12} md={6}>
             <Typography variant="subtitle1" color="primary" gutterBottom>
-              Credit Hours
+              Course Hours
             </Typography>
             <Box sx={{ ml: 2 }}>
               <Typography variant="body2">
-                <strong>Credit Hours:</strong> {course.creditHours || 0}
+                <strong>Credit Hours:</strong> {course.Hourfor?.creaditHours || 0}
               </Typography>
               <Typography variant="body2">
-                <strong>Lecture Hours:</strong> {course.lectureHours || 0}
+                <strong>Lecture Hours:</strong> {course.Hourfor?.lecture || 0}
               </Typography>
               <Typography variant="body2">
-                <strong>Lab Hours:</strong> {course.labHours || 0}
+                <strong>Lab Hours:</strong> {course.Hourfor?.lab || 0}
               </Typography>
               <Typography variant="body2">
-                <strong>Tutorial Hours:</strong> {course.tutorialHours || 0}
+                <strong>Tutorial Hours:</strong> {course.Hourfor?.tutorial || 0}
               </Typography>
-            </Box>
-          </Grid>
-
-          {/* Sections - Second Row */}
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle1" color="primary" gutterBottom>
-              Number of Sections
-            </Typography>
-            <Box sx={{ ml: 2 }}>
-              {course.Number_of_Sections && (
-                <>
-                  <Typography variant="body2">
-                    <strong>Lecture Sections:</strong> {course.Number_of_Sections.lecture || 0}
-                  </Typography>
-                  <Typography variant="body2">
-                    <strong>Lab Sections:</strong> {course.Number_of_Sections.lab || 0}
-                  </Typography>
-                  <Typography variant="body2">
-                    <strong>Tutorial Sections:</strong> {course.Number_of_Sections.tutorial || 0}
-                  </Typography>
-                </>
-              )}
-            </Box>
-          </Grid>
-
-          {/* Additional Hours - Second Row */}
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle1" color="primary" gutterBottom>
-              Additional Hours
-            </Typography>
-            <Box sx={{ ml: 2 }}>
+              <Divider sx={{ my: 1 }} />
               <Typography variant="body2">
-                <strong>HDP Hours:</strong> {course.hdp || 0}
+                <strong>Lecture Sections:</strong> {course.Number_of_Sections?.lecture || 0}
               </Typography>
               <Typography variant="body2">
-                <strong>Position Hours:</strong> {course.position || 0}
+                <strong>Lab Sections:</strong> {course.Number_of_Sections?.lab || 0}
               </Typography>
               <Typography variant="body2">
-                <strong>Branch Advisor Hours:</strong> {course.BranchAdvisor || 0}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold', color: 'primary.main' }}>
-                <strong>Total Hours:</strong> {course.totalHours || 0}
+                <strong>Tutorial Sections:</strong> {course.Number_of_Sections?.tutorial || 0}
               </Typography>
             </Box>
           </Grid>
@@ -749,10 +750,7 @@ const Courses = () => {
         lecture: selectedCourse?.Number_of_Sections?.lecture || '',
         lab: selectedCourse?.Number_of_Sections?.lab || '',
         tutorial: selectedCourse?.Number_of_Sections?.tutorial || ''
-      },
-      hdp: selectedCourse?.hdp || '',
-      position: selectedCourse?.position || '',
-      BranchAdvisor: selectedCourse?.BranchAdvisor || ''
+      }
     },
     validationSchema: Yup.object({
       title: Yup.string().required('Required'),
@@ -771,10 +769,7 @@ const Courses = () => {
         lecture: Yup.number().required('Required'),
         lab: Yup.number().required('Required'),
         tutorial: Yup.number().required('Required')
-      }),
-      hdp: Yup.number().required('Required'),
-      position: Yup.number().required('Required'),
-      BranchAdvisor: Yup.number().required('Required')
+      })
     }),
     enableReinitialize: true,
     onSubmit: async (values) => {
@@ -820,15 +815,9 @@ const Courses = () => {
         body: JSON.stringify({ instructorId: selectedInstructor })
       });
 
-      let data;
-      try {
-        data = await response.json();
-      } catch (err) {
-        throw new Error('Failed to assign course. Please try again.');
-      }
-
       if (!response.ok) {
-        throw new Error(data?.message || 'Failed to assign course');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to assign course');
       }
 
       toast.success('Course assigned successfully');
@@ -912,15 +901,10 @@ const Courses = () => {
         }),
       });
 
-      let data;
-      try {
-        data = await response.json();
-      } catch (err) {
-        throw new Error('Failed to approve course. Please try again.');
-      }
-
       if (!response.ok) {
-        throw new Error(data?.message || 'Failed to approve course');
+        const errorData = await response.json();
+        console.error('Approval error response:', errorData);
+        throw new Error(errorData.message || 'Failed to approve course');
       }
 
       toast.success('Course approved successfully');
@@ -973,15 +957,10 @@ const Courses = () => {
         }),
       });
 
-      let data;
-      try {
-        data = await response.json();
-      } catch (err) {
-        throw new Error('Failed to reject course. Please try again.');
-      }
-
       if (!response.ok) {
-        throw new Error(data?.message || 'Failed to reject course');
+        const errorData = await response.json();
+        console.error('Rejection error response:', errorData);
+        throw new Error(errorData.message || 'Failed to reject course');
       }
 
       toast.success('Course rejected successfully');
@@ -1014,15 +993,10 @@ const Courses = () => {
         },
       });
 
-      let data;
-      try {
-        data = await response.json();
-      } catch (err) {
-        throw new Error('Failed to resubmit course. Please try again.');
-      }
-
       if (!response.ok) {
-        throw new Error(data?.message || 'Failed to resubmit course');
+        const errorData = await response.json();
+        console.error('Resubmit error response:', errorData);
+        throw new Error(errorData.message || 'Failed to resubmit course');
       }
 
       toast.success('Course resubmitted to School Dean successfully');
@@ -1067,10 +1041,7 @@ const Courses = () => {
       classYear: course.classYear,
       semester: course.semester,
       Hourfor: course.Hourfor,
-      Number_of_Sections: course.Number_of_Sections,
-      hdp: course.hdp,
-      position: course.position,
-      BranchAdvisor: course.BranchAdvisor
+      Number_of_Sections: course.Number_of_Sections
     });
     setOpenDialog(true);
   };
@@ -1806,49 +1777,6 @@ const Courses = () => {
                     formik.touched.Number_of_Sections?.tutorial &&
                     formik.errors.Number_of_Sections?.tutorial
                   }
-                />
-              </Grid>
-
-              {/* Additional Hours */}
-              <Grid item xs={12}>
-                <Typography variant="subtitle1" gutterBottom>
-                  Additional Hours
-                </Typography>
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  fullWidth
-                  label="HDP Hours"
-                  name="hdp"
-                  type="number"
-                  value={formik.values.hdp}
-                  onChange={formik.handleChange}
-                  error={formik.touched.hdp && Boolean(formik.errors.hdp)}
-                  helperText={formik.touched.hdp && formik.errors.hdp}
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  fullWidth
-                  label="Position Hours"
-                  name="position"
-                  type="number"
-                  value={formik.values.position}
-                  onChange={formik.handleChange}
-                  error={formik.touched.position && Boolean(formik.errors.position)}
-                  helperText={formik.touched.position && formik.errors.position}
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <TextField
-                  fullWidth
-                  label="Branch Advisor Hours"
-                  name="BranchAdvisor"
-                  type="number"
-                  value={formik.values.BranchAdvisor}
-                  onChange={formik.handleChange}
-                  error={formik.touched.BranchAdvisor && Boolean(formik.errors.BranchAdvisor)}
-                  helperText={formik.touched.BranchAdvisor && formik.errors.BranchAdvisor}
                 />
               </Grid>
             </Grid>

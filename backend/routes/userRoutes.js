@@ -37,6 +37,12 @@ router.get(
   userController.getDepartmentHeads
 );
 
+// Get instructor hours
+router.get(
+  '/:id/hours',
+  authController.restrictTo('scientific-director', 'vice-director', 'department-head'),
+  userController.getUserHours
+);
 
 // Get department heads by department
 router.get(
@@ -59,6 +65,13 @@ router
     authController.restrictTo('school-dean'),
     userController.getSchoolInstructors
   );
+
+// Get user hours
+router.get(
+  '/hours/:id',
+  authController.restrictTo('instructor', 'department-head', 'school-dean', 'vice-scientific-director', 'scientific-director'),
+  userController.getUserHours
+);
 
 // Admin only routes
 router.use(authController.restrictTo('admin'));

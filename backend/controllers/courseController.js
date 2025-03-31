@@ -3,6 +3,7 @@ const User = require('../models/userModel');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 const Email = require('../utils/email');
+const mongoose = require('mongoose');
 
 exports.getAllCourses = catchAsync(async (req, res, next) => {
   // Get courses based on user role
@@ -697,20 +698,23 @@ exports.reviewCourseByDean = catchAsync(async (req, res, next) => {
       const viceDirector = await User.findOne({ role: 'vice-scientific-director' });
       if (viceDirector && viceDirector.email) {
         const emailInstance = new Email();
+        const emailSubject = `Course Ready for Review: ${course.code}`;
+        const emailMessage = `
+          A new course is ready for your review:
+          
+          Course Details:
+          - Code: ${course.code}
+          - Title: ${course.title}
+          - Department: ${course.department}
+          - Instructor: ${course.instructor ? course.instructor.name : 'Not assigned'}
+          
+          The course has been approved by the School Dean and requires your review.
+        `;
+
         await emailInstance.send({
           email: viceDirector.email,
-          subject: `Course Ready for Review: ${course.code}`,
-          message: `
-            A new course is ready for your review:
-            
-            Course Details:
-            - Code: ${course.code}
-            - Title: ${course.title}
-            - Department: ${course.department}
-            - Instructor: ${course.instructor ? course.instructor.name : 'Not assigned'}
-            
-            The course has been approved by the School Dean and requires your review.
-          `
+          subject: emailSubject,
+          message: emailMessage
         });
       }
     } else {
@@ -723,23 +727,26 @@ exports.reviewCourseByDean = catchAsync(async (req, res, next) => {
 
       if (departmentHead && departmentHead.email) {
         const emailInstance = new Email();
+        const emailSubject = `Course Rejected: ${course.code}`;
+        const emailMessage = `
+          The following course has been rejected by the School Dean:
+          
+          Course Details:
+          - Code: ${course.code}
+          - Title: ${course.title}
+          - Department: ${course.department}
+          - Instructor: ${course.instructor ? course.instructor.name : 'Not assigned'}
+          
+          Rejection Reason:
+          ${rejectionReason}
+          
+          Please review the feedback and make necessary changes before resubmitting.
+        `;
+
         await emailInstance.send({
           email: departmentHead.email,
-          subject: 'Course Rejected: ${course.code}',
-          message: `
-            The following course has been rejected by the School Dean:
-            
-            Course Details:
-            - Code: ${course.code}
-            - Title: ${course.title}
-            - Department: ${course.department}
-            - Instructor: ${course.instructor ? course.instructor.name : 'Not assigned'}
-            
-            Rejection Reason:
-            ${rejectionReason}
-            
-            Please review the feedback and make necessary changes before resubmitting.
-          `
+          subject: emailSubject,
+          message: emailMessage
         });
       }
     }
@@ -833,14 +840,6 @@ exports.resubmitToDean = catchAsync(async (req, res, next) => {
 exports.getViceDirectorCourses = async (req, res) => {
   try {
     const courses = await Course.find({
-      status: { 
-        $in: [
-          'dean-approved',
-          'vice-director-approved',
-          'vice-director-rejected',
-          'dean-review'
-        ]
-      },
       instructor: { $exists: true, $ne: null }
     })
     .populate({
@@ -868,15 +867,12 @@ exports.getViceDirectorCourses = async (req, res) => {
         };
       }
 
-      // Calculate course workload
+      // Calculate course workload (only course-specific hours)
       const workload = (
         (course.Hourfor?.creaditHours || 0) +
         (course.Hourfor?.lecture || 0) +
         (course.Hourfor?.lab || 0) +
-        (course.Hourfor?.tutorial || 0) +
-        (course.hdp || 0) +
-        (course.position || 0) +
-        (course.branchAdvisor || 0)
+        (course.Hourfor?.tutorial || 0)
       );
 
       acc[instructorId].totalWorkload += workload;
@@ -894,70 +890,178 @@ exports.getViceDirectorCourses = async (req, res) => {
     console.error('Error in getViceDirectorCourses:', error);
     res.status(500).json({
       status: 'error',
-      message: 'Error fetching courses for vice director review'
+      message: 'Error fetching courses'
     });
   }
 };
 
 // Review course by vice scientific director
 exports.reviewCourseByViceDirector = catchAsync(async (req, res, next) => {
-  const { action, comment } = req.body;
-  const course = await Course.findById(req.params.id);
+  const { action, comment, instructorId } = req.body;
+  const course = await Course.findById(req.params.id)
+    .populate('instructor', 'name email department school');
 
   if (!course) {
     return next(new AppError('Course not found', 404));
   }
 
-  if (course.status !== 'dean-approved') {
-    return next(new AppError('Course is not ready for vice director review', 400));
+  // Only reject if this course belongs to the specified instructor
+  if (action === 'reject' && instructorId && 
+      course.instructor._id.toString() !== instructorId.toString()) {
+    return next(new AppError('Course does not belong to the specified instructor', 400));
   }
 
-  const historyEntry = {
-    status: action === 'approve' ? 'vice-director-approved' : 'resubmitted-to-dean',
+  // Update course status based on action
+  course.status = action === 'approve' ? 'vice-director-approved' : 'vice-director-rejected';
+  
+  // Add to approval history
+  course.approvalHistory.push({
+    status: course.status,
     approver: req.user._id,
     role: 'vice-scientific-director',
-    comment: comment,
-    date: Date.now()
-  };
-
-  // Update course status and add to history
-  course.status = action === 'approve' ? 'vice-director-approved' : 'dean-review';
-  course.approvalHistory.push(historyEntry);
-  
-  if (action === 'reject') {
-    course.viceDirectorRejectionNotes = comment;
-  }
+    date: Date.now(),
+    comment: comment || 'Reviewed by Vice Scientific Director'
+  });
 
   await course.save();
 
-  // Send notifications
-  if (action === 'approve') {
-    // Send notification to scientific director
-    await sendEmail({
-      email: 'scientific.director@example.com', // Replace with actual email
-      subject: 'Course Ready for Final Review',
-      message: `Course ${course.code} - ${course.title} has been approved by the Vice Scientific Director and is ready for your review.`
-    });
-  } else {
-    // Send notification to school dean
-    const dean = await User.findOne({ 
-      role: 'school-dean',
-      school: course.school
-    });
-
-    if (dean) {
-      await sendEmail({
-        email: dean.email,
-        subject: 'Course Requires Review - Feedback from Vice Scientific Director',
-        message: `Course ${course.code} - ${course.title} has been returned for review by the Vice Scientific Director.\n\nFeedback: ${comment}`
+  // Try to send notification email, but don't block if it fails
+  try {
+    const emailInstance = new Email();
+    
+    if (action === 'approve') {
+      // Notify scientific director
+      const scientificDirector = await User.findOne({ role: 'scientific-director' });
+      if (scientificDirector && scientificDirector.email) {
+        await emailInstance.send({
+          email: scientificDirector.email,
+          subject: `Course ${course.code} Ready for Review`,
+          message: `Course ${course.code} has been approved by Vice Scientific Director and is ready for your review.`
+        }).catch(error => {
+          console.error('Failed to send email to scientific director:', error);
+        });
+      }
+    } else {
+      // Notify school dean and instructor about rejection
+      const dean = await User.findOne({ 
+        role: 'school-dean',
+        school: course.instructor.school
       });
+
+      if (dean && dean.email) {
+        await emailInstance.send({
+          email: dean.email,
+          subject: `Course ${course.code} Rejected by Vice Scientific Director`,
+          message: `Course ${course.code} has been rejected.\n\nReason: ${comment}`
+        }).catch(error => {
+          console.error('Failed to send email to dean:', error);
+        });
+      }
+
+      if (course.instructor && course.instructor.email) {
+        await emailInstance.send({
+          email: course.instructor.email,
+          subject: `Course ${course.code} Rejected by Vice Scientific Director`,
+          message: `Your course ${course.code} has been rejected.\n\nReason: ${comment}`
+        }).catch(error => {
+          console.error('Failed to send email to instructor:', error);
+        });
+      }
     }
+  } catch (emailError) {
+    console.error('Error sending notification emails:', emailError);
+    // Don't throw the error, continue with the response
   }
 
   res.status(200).json({
     status: 'success',
     data: {
       course
+    }
+  });
+});
+
+// Bulk approve courses by vice director
+exports.bulkApproveByViceDirector = catchAsync(async (req, res, next) => {
+  const { courseIds, action } = req.body;
+  const instructorId = req.params.instructorId;
+
+  // Validate input
+  if (!courseIds || !Array.isArray(courseIds) || courseIds.length === 0) {
+    return next(new AppError('Please provide valid course IDs', 400));
+  }
+
+  if (!['approve', 'reject'].includes(action)) {
+    return next(new AppError('Invalid action', 400));
+  }
+
+  // Get all courses
+  const courses = await Course.find({
+    _id: { $in: courseIds },
+    instructor: instructorId,
+    status: 'dean-approved' // Only allow dean-approved courses
+  }).populate('instructor', 'name email department school');
+
+  if (courses.length === 0) {
+    return next(new AppError('No eligible courses found for approval', 404));
+  }
+
+  const newStatus = action === 'approve' ? 'vice-director-approved' : 'vice-director-rejected';
+  const historyEntry = {
+    status: newStatus,
+    date: new Date(),
+    notes: req.body.notes || '',
+    reviewedBy: req.user._id
+  };
+
+  // Update all courses
+  const updatedCourses = await Promise.all(
+    courses.map(async (course) => {
+      course.status = newStatus;
+      course.approvalHistory.push(historyEntry);
+      return course.save();
+    })
+  );
+
+  // Send notifications
+  try {
+    const emailInstance = new Email();
+    const instructor = courses[0].instructor;
+
+    // Notify instructor
+    await emailInstance.sendCourseStatusUpdate({
+      email: instructor.email,
+      name: instructor.name,
+      courses: courses.map(c => c.code).join(', '),
+      status: newStatus,
+      notes: historyEntry.notes
+    });
+
+    // If approved, notify Scientific Director
+    if (action === 'approve') {
+      const scientificDirectors = await User.find({ role: 'scientific-director' });
+      await Promise.all(
+        scientificDirectors.map(director =>
+          emailInstance.sendCourseForReview({
+            email: director.email,
+            name: director.name,
+            instructorName: instructor.name,
+            department: instructor.department,
+            school: instructor.school,
+            courses: courses.map(c => c.code).join(', ')
+          })
+        )
+      );
+    }
+  } catch (error) {
+    console.error('Email notification error:', error);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: `Successfully ${action}d all courses`,
+    data: {
+      courses: updatedCourses
     }
   });
 });
@@ -1066,13 +1170,6 @@ exports.getViceDirectorDashboardStats = async (req, res) => {
 exports.getScientificDirectorCourses = async (req, res) => {
   try {
     const courses = await Course.find({
-      status: { 
-        $in: [
-          'vice-director-approved',
-          'approved',
-          'rejected'
-        ]
-      },
       instructor: { $exists: true, $ne: null }
     })
     .populate({
@@ -1155,7 +1252,7 @@ exports.reviewCourseByScientificDirector = async (req, res) => {
       });
     }
 
-    const newStatus = action === 'approve' ? 'approved' : 'rejected';
+    const newStatus = action === 'approve' ? 'scientific-director-approved' : 'scientific-director-rejected';
     const historyEntry = {
       status: newStatus,
       date: new Date(),
@@ -1175,7 +1272,7 @@ exports.reviewCourseByScientificDirector = async (req, res) => {
     const viceDirector = await User.findOne({ role: 'vice-scientific-director' });
 
     if (action === 'approve') {
-      // Send approval notification to instructor
+      // Notify instructor
       const emailInstance = new Email();
       await emailInstance.send({
         email: instructor.email,
@@ -1232,8 +1329,8 @@ exports.getScientificDirectorDashboardStats = async (req, res) => {
       status: {
         $in: [
           'vice-director-approved',
-          'approved',
-          'rejected'
+          'scientific-director-approved',
+          'scientific-director-rejected'
         ]
       }
     })
@@ -1248,57 +1345,55 @@ exports.getScientificDirectorDashboardStats = async (req, res) => {
     .populate('school', 'name')
     .lean();
 
-    // Calculate basic stats
+    // Calculate overall stats
     const totalCourses = courses.length;
     const pendingReview = courses.filter(c => c.status === 'vice-director-approved').length;
-    const approved = courses.filter(c => c.status === 'approved').length;
-    const rejected = courses.filter(c => c.status === 'rejected').length;
+    const approved = courses.filter(c => c.status === 'scientific-director-approved').length;
+    const rejected = courses.filter(c => c.status === 'scientific-director-rejected').length;
 
-    // Calculate workload by school
-    const schoolWorkload = courses.reduce((acc, course) => {
+    // Calculate school stats
+    const schoolStats = courses.reduce((acc, course) => {
       const schoolName = course.school?.name || 'Unassigned';
+      
       if (!acc[schoolName]) {
         acc[schoolName] = {
-          name: schoolName,
-          totalWorkload: 0,
-          courseCount: 0
+          school: schoolName,
+          totalCourses: 0,
+          pendingReview: 0,
+          approved: 0,
+          rejected: 0
         };
       }
+
+      acc[schoolName].totalCourses++;
       
-      const workload = (
-        (course.Hourfor?.creaditHours || 0) +
-        (course.Hourfor?.lecture || 0) +
-        (course.Hourfor?.lab || 0) +
-        (course.Hourfor?.tutorial || 0) +
-        (course.hdp || 0) +
-        (course.position || 0) +
-        (course.branchAdvisor || 0)
-      );
-      
-      acc[schoolName].totalWorkload += workload;
-      acc[schoolName].courseCount += 1;
+      if (course.status === 'vice-director-approved') {
+        acc[schoolName].pendingReview++;
+      } else if (course.status === 'scientific-director-approved') {
+        acc[schoolName].approved++;
+      } else if (course.status === 'scientific-director-rejected') {
+        acc[schoolName].rejected++;
+      }
+
       return acc;
     }, {});
 
     // Status distribution for pie chart
     const statusDistribution = [
-      { name: 'Pending Final Review', value: pendingReview },
+      { name: 'Pending Review', value: pendingReview },
       { name: 'Approved', value: approved },
-      { name: 'Returned to Vice Director', value: rejected }
+      { name: 'Rejected', value: rejected }
     ];
 
-    // Get recent activity from approval history
+    // Get recent activity
     const recentActivity = courses
       .filter(course => course.approvalHistory && course.approvalHistory.length > 0)
       .flatMap(course => 
         course.approvalHistory.map(history => ({
-          courseCode: course.code,
-          courseTitle: course.title,
-          type: history.status === 'approved' ? 'approval' : 'return',
-          description: history.notes || 
-            (history.status === 'approved' 
-              ? 'Course given final approval'
-              : 'Course returned to Vice Director'),
+          course: `${course.code} - ${course.title}`,
+          department: course.instructor?.department || 'Unassigned',
+          school: course.school?.name || 'Unassigned',
+          type: history.status === 'scientific-director-approved' ? 'approved' : 'rejected',
           timestamp: history.date
         }))
       )
@@ -1312,7 +1407,7 @@ exports.getScientificDirectorDashboardStats = async (req, res) => {
         pendingReview,
         approved,
         rejected,
-        workloadBySchool: Object.values(schoolWorkload),
+        schoolStats: Object.values(schoolStats),
         statusDistribution,
         recentActivity
       }
@@ -1325,6 +1420,96 @@ exports.getScientificDirectorDashboardStats = async (req, res) => {
     });
   }
 };
+
+// Bulk approve courses by scientific director
+exports.bulkApproveByScientificDirector = catchAsync(async (req, res, next) => {
+  const { instructorId, action } = req.body;
+
+  // Validate input
+  if (!['approve', 'reject'].includes(action)) {
+    return next(new AppError('Invalid action. Must be either approve or reject', 400));
+  }
+
+  if (!instructorId) {
+    return next(new AppError('Instructor ID is required', 400));
+  }
+
+  // Find all courses for this instructor that are in vice-director-approved status
+  const courses = await Course.find({
+    instructor: instructorId,
+    status: 'vice-director-approved'
+  }).populate({
+    path: 'instructor',
+    select: 'name email department school'
+  });
+
+  if (!courses || courses.length === 0) {
+    return next(new AppError('No eligible courses found for this instructor', 404));
+  }
+
+  const newStatus = action === 'approve' ? 'scientific-director-approved' : 'scientific-director-rejected';
+  const bulkOps = courses.map(course => ({
+    updateOne: {
+      filter: { _id: course._id },
+      update: { 
+        status: newStatus,
+        scientificDirectorApproval: {
+          status: newStatus,
+          approvedBy: req.user._id,
+          approvedAt: Date.now()
+        }
+      }
+    }
+  }));
+
+  await Course.bulkWrite(bulkOps);
+
+  // Send notifications
+  const emailInstance = new Email();
+  const instructor = courses[0].instructor;
+
+  if (action === 'approve') {
+    // Notify instructor
+    await emailInstance.sendCourseApprovalNotification({
+      email: instructor.email,
+      name: instructor.name,
+      approverRole: 'Scientific Director',
+      courses: courses.map(c => c.code).join(', ')
+    });
+
+    // Notify finance
+    const financeUsers = await User.find({ role: 'finance' });
+    await Promise.all(financeUsers.map(user => 
+      emailInstance.sendNewCourseNotification({
+        email: user.email,
+        name: user.name,
+        courseCodes: courses.map(c => c.code).join(', '),
+        instructorName: instructor.name
+      })
+    ));
+  } else {
+    // Notify vice director about rejection
+    const viceDirectors = await User.find({ role: 'vice-scientific-director' });
+    await Promise.all(viceDirectors.map(user => 
+      emailInstance.sendCourseRejectionNotification({
+        email: user.email,
+        name: user.name,
+        courseCodes: courses.map(c => c.code).join(', '),
+        instructorName: instructor.name,
+        rejectedBy: 'Scientific Director',
+        reason: req.body.rejectionReason || 'No reason provided'
+      })
+    ));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: `Successfully ${action === 'approve' ? 'approved' : 'rejected'} ${courses.length} courses`,
+    data: {
+      courses
+    }
+  });
+});
 
 // Department Head course review
 exports.reviewCourseByDepartmentHead = catchAsync(async (req, res, next) => {
@@ -1465,7 +1650,7 @@ exports.reviewCourseByDepartmentHead = catchAsync(async (req, res, next) => {
         role: 'school-dean',
         school: course.school
       });
-      
+
       if (schoolDean && schoolDean.email) {
         await emailInstance.send({
           email: schoolDean.email,
@@ -1573,3 +1758,237 @@ exports.reviewCourseByDepartmentHead = catchAsync(async (req, res, next) => {
     }
   });
 });
+
+// Bulk review courses by dean
+exports.bulkReviewCoursesByDean = catchAsync(async (req, res, next) => {
+  const { courseIds } = req.body;
+
+  if (!courseIds || !Array.isArray(courseIds)) {
+    return next(new AppError('Please provide an array of course IDs', 400));
+  }
+
+  const courses = await Course.find({ 
+    _id: { $in: courseIds },
+    school: req.user.school
+  }).populate({
+    path: 'instructor',
+    select: 'name email department school'
+  });
+
+  // Verify all courses belong to dean's school
+  if (courses.length !== courseIds.length) {
+    return next(new AppError('Some courses were not found or do not belong to your school', 404));
+  }
+
+  // Update all courses in a single transaction
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // Update all courses
+    const bulkOps = courses.map(course => ({
+      updateOne: {
+        filter: { _id: course._id },
+        update: {
+          $set: {
+            status: 'dean-approved',
+            rejectionReason: undefined,
+            deanRejectionDate: undefined
+          },
+          $push: {
+            approvalHistory: {
+              status: 'dean-approved',
+              approver: req.user._id,
+              role: 'school-dean',
+              date: Date.now(),
+              comment: 'Course approved by School Dean'
+            }
+          }
+        }
+      }
+    }));
+
+    await Course.bulkWrite(bulkOps, { session });
+    await session.commitTransaction();
+
+    // Try to send notification email, but don't block if it fails
+    try {
+      const viceDirector = await User.findOne({ role: 'vice-scientific-director' });
+      if (viceDirector && viceDirector.email) {
+        const emailInstance = new Email();
+        await emailInstance.send({
+          email: viceDirector.email,
+          subject: `Multiple Courses Ready for Review`,
+          message: `
+            ${courses.length} courses have been approved by the School Dean and are ready for your review.
+            
+            Course Details:
+            ${courses.map(course => `- ${course.code}: ${course.title}`).join('\n')}
+          `
+        }).catch(error => {
+          console.error('Email notification failed:', error);
+          // Don't throw the error, just log it
+        });
+      }
+    } catch (emailError) {
+      console.error('Error sending notification:', emailError);
+      // Don't throw the error, continue with the response
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: `Successfully approved ${courses.length} courses`,
+      data: {
+        courses: courses.map(course => course._id)
+      }
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+});
+
+// Resubmit rejected courses to Vice Director
+exports.resubmitToViceDirector = async (req, res) => {
+  try {
+    const { courseIds } = req.body;
+
+    // Update all specified courses
+    const updateResult = await Course.updateMany(
+      {
+        _id: { $in: courseIds },
+        status: 'vice-director-rejected' // Only update if current status is rejected
+      },
+      {
+        $set: { status: 'dean-approved' }, // Set status to dean-approved to send back to vice director
+        $push: {
+          approvalHistory: {
+            status: 'dean-approved',
+            date: new Date(),
+            comment: 'Resubmitted to Vice Scientific Director for review',
+            user: req.user._id
+          }
+        }
+      }
+    );
+
+    if (updateResult.modifiedCount > 0) {
+      // Get the updated courses to send notifications
+      const updatedCourses = await Course.find({ _id: { $in: courseIds } })
+        .populate('instructor')
+        .populate('department');
+
+      // Send notifications or emails here if needed
+      
+      res.json({
+        success: true,
+        message: `Successfully resubmitted ${updateResult.modifiedCount} courses to Vice Scientific Director`,
+        modifiedCount: updateResult.modifiedCount
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'No courses were resubmitted. Please check if the courses are in the correct state.'
+      });
+    }
+  } catch (error) {
+    console.error('Error resubmitting courses:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error resubmitting courses to Vice Scientific Director',
+      error: error.message
+    });
+  }
+};
+
+// Reject courses and return to department head
+exports.rejectToDepartment = async (req, res) => {
+  try {
+    const { courseIds, comment } = req.body;
+
+    if (!comment || !comment.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rejection reason is required'
+      });
+    }
+
+    // Update all specified courses
+    const updateResult = await Course.updateMany(
+      {
+        _id: { $in: courseIds }
+      },
+      {
+        $set: { status: 'dean-rejected' },
+        $push: {
+          approvalHistory: {
+            status: 'dean-rejected',
+            date: new Date(),
+            comment: comment,
+            user: req.user._id
+          }
+        }
+      }
+    );
+
+    if (updateResult.modifiedCount > 0) {
+      // Get the updated courses to send notifications
+      const updatedCourses = await Course.find({ _id: { $in: courseIds } })
+        .populate('instructor')
+        .populate('department');
+
+      // Send notifications or emails here if needed
+      
+      res.json({
+        success: true,
+        message: `Successfully rejected ${updateResult.modifiedCount} courses and returned to Department Head`,
+        modifiedCount: updateResult.modifiedCount
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'No courses were rejected. Please check if the courses are in the correct state.'
+      });
+    }
+  } catch (error) {
+    console.error('Error rejecting courses:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error rejecting courses',
+      error: error.message
+    });
+  }
+};
+
+module.exports = {
+  getAllCourses: exports.getAllCourses,
+  getCourse: exports.getCourse,
+  createCourse: exports.createCourse,
+  updateCourse: exports.updateCourse,
+  deleteCourse: exports.deleteCourse,
+  getMyCourses: exports.getMyCourses,
+  assignCourse: exports.assignCourse,
+  selfAssignCourse: exports.selfAssignCourse,
+  approveCourseAssignment: exports.approveCourseAssignment,
+  rejectCourseAssignment: exports.rejectCourseAssignment,
+  approveCourse: exports.approveCourse,
+  rejectCourse: exports.rejectCourse,
+  getSchoolCourses: exports.getSchoolCourses,
+  getSchoolWorkload: exports.getSchoolWorkload,
+  reviewCourseByDean: exports.reviewCourseByDean,
+  resubmitToDean: exports.resubmitToDean,
+  getViceDirectorCourses: exports.getViceDirectorCourses,
+  reviewCourseByViceDirector: exports.reviewCourseByViceDirector,
+  bulkApproveByViceDirector: exports.bulkApproveByViceDirector,
+  getViceDirectorDashboardStats: exports.getViceDirectorDashboardStats,
+  getScientificDirectorCourses: exports.getScientificDirectorCourses,
+  reviewCourseByScientificDirector: exports.reviewCourseByScientificDirector,
+  getScientificDirectorDashboardStats: exports.getScientificDirectorDashboardStats,
+  bulkApproveByScientificDirector: exports.bulkApproveByScientificDirector,
+  reviewCourseByDepartmentHead: exports.reviewCourseByDepartmentHead,
+  bulkReviewCoursesByDean: exports.bulkReviewCoursesByDean,
+  resubmitToViceDirector: exports.resubmitToViceDirector,
+  rejectToDepartment: exports.rejectToDepartment
+};

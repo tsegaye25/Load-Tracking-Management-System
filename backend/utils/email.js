@@ -88,6 +88,77 @@ class Email {
 
       await this.transporter.sendMail(mailOptions);
     }
+
+    async sendCourseApprovalNotification({ email, name, approverRole, courses }) {
+      const mailOptions = {
+        from: process.env.EMAIL_FROM,
+        to: email,
+        subject: 'Course Approval Notification',
+        html: `
+          <div class="container">
+            <div class="header">
+              <h2>Course Approval Notification</h2>
+            </div>
+            <div class="content">
+              <p>Dear ${name},</p>
+              <p>Your courses have been approved by the ${approverRole}.</p>
+              <p>Approved Courses: ${courses}</p>
+              <p>You can now proceed with the next steps in the course management process.</p>
+              <p>Best regards,<br>LTMS Team</p>
+            </div>
+          </div>
+        `
+      };
+      await this.transporter.sendMail(mailOptions);
+    }
+
+    async sendNewCourseNotification({ email, name, courseCodes, instructorName }) {
+      const mailOptions = {
+        from: process.env.EMAIL_FROM,
+        to: email,
+        subject: 'New Courses Ready for Processing',
+        html: `
+          <div class="container">
+            <div class="header">
+              <h2>New Courses for Processing</h2>
+            </div>
+            <div class="content">
+              <p>Dear ${name},</p>
+              <p>New courses have been approved and are ready for processing:</p>
+              <p>Courses: ${courseCodes}</p>
+              <p>Instructor: ${instructorName}</p>
+              <p>Please review and process these courses at your earliest convenience.</p>
+              <p>Best regards,<br>LTMS Team</p>
+            </div>
+          </div>
+        `
+      };
+      await this.transporter.sendMail(mailOptions);
+    }
+
+    async sendCourseRejectionNotification({ email, name, courseCodes, instructorName, rejectedBy, reason }) {
+      const mailOptions = {
+        from: process.env.EMAIL_FROM,
+        to: email,
+        subject: 'Course Rejection Notification',
+        html: `
+          <div class="container">
+            <div class="header">
+              <h2>Course Rejection Notification</h2>
+            </div>
+            <div class="content">
+              <p>Dear ${name},</p>
+              <p>The following courses for instructor ${instructorName} have been rejected by ${rejectedBy}:</p>
+              <p>Courses: ${courseCodes}</p>
+              <p>Reason for rejection: ${reason}</p>
+              <p>Please review and take necessary action.</p>
+              <p>Best regards,<br>LTMS Team</p>
+            </div>
+          </div>
+        `
+      };
+      await this.transporter.sendMail(mailOptions);
+    }
 }
 
 module.exports = Email;

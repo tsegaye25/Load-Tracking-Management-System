@@ -16,7 +16,15 @@ export const register = createAsyncThunk(
   'auth/register',
   async (userData, { rejectWithValue, getState }) => {
     try {
-      const { data } = await axios.post(`${baseURL}/api/v1/users/signup`, userData);
+      // Convert hour fields to numbers
+      const formattedData = {
+        ...userData,
+        hdpHour: Number(userData.hdpHour || 0),
+        positionHour: Number(userData.positionHour || 0),
+        batchAdvisor: Number(userData.batchAdvisor || 0)
+      };
+
+      const { data } = await axios.post(`${baseURL}/api/v1/users/signup`, formattedData);
       
       // Check if the current user is an admin
       const currentUser = getState().auth.user;
@@ -47,6 +55,46 @@ export const updateProfile = createAsyncThunk(
       return { user: updatedUser, token };
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Profile update failed');
+    }
+  }
+);
+
+export const updateUser = createAsyncThunk(
+  'auth/updateUser',
+  async ({ id, ...userData }, { rejectWithValue, getState }) => {
+    try {
+      const { token } = getState().auth;
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+
+      // Convert hour fields to numbers
+      if (userData.hdpHour) userData.hdpHour = Number(userData.hdpHour);
+      if (userData.positionHour) userData.positionHour = Number(userData.positionHour);
+      if (userData.batchAdvisor) userData.batchAdvisor = Number(userData.batchAdvisor);
+
+      const { data } = await axios.patch(
+        `${baseURL}/api/v1/users/${id}`,
+        userData,
+        config
+      );
+
+      // Update users list
+      return data.data.user;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to update user');
+    }
+  }
+);
+
+export const deleteUser = createAsyncThunk(
+  'auth/deleteUser',
+  async (id, { rejectWithValue }) => {
+    try {
+      await axios.delete(`${baseURL}/api/v1/users/${id}`);
+      return id; // Return the deleted user's ID
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to delete user');
     }
   }
 );
@@ -123,6 +171,33 @@ const authSlice = createSlice({
         state.loading = false;
         state.error = payload;
         toast.error(payload || 'Profile update failed');
+      })
+      .addCase(updateUser.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateUser.fulfilled, (state, { payload }) => {
+        state.loading = false;
+        state.users = state.users.map(user => user.id === payload.id ? payload : user);
+        toast.success('User updated successfully!');
+      })
+      .addCase(updateUser.rejected, (state, { payload }) => {
+        state.loading = false;
+        state.error = payload;
+        toast.error(payload || 'Failed to update user');
+      })
+      .addCase(deleteUser.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(deleteUser.fulfilled, (state, { payload }) => {
+        state.loading = false;
+        state.users = state.users.filter(user => user._id !== payload);
+      })
+      .addCase(deleteUser.rejected, (state, { payload }) => {
+        state.loading = false;
+        state.error = payload;
+        toast.error(payload || 'Failed to delete user');
       });
   }
 });
@@ -157,40 +232,6 @@ export const getAllUsers = () => async (dispatch) => {
   } catch (error) {
     const message = error.response?.data?.message || 'Failed to fetch users';
     dispatch(setError(message));
-  } finally {
-    dispatch(setLoading(false));
-  }
-};
-
-export const updateUser = ({ id, userData }) => async (dispatch, getState) => {
-  try {
-    dispatch(setLoading(true));
-    const { token } = getState().auth;
-    const config = {
-      headers: { Authorization: `Bearer ${token}` }
-    };
-    const { data } = await axios.patch(`${baseURL}/api/v1/users/${id}`, userData, config);
-    dispatch(getAllUsers()); // Refresh the users list
-    toast.success('User updated successfully!');
-    return true;
-  } catch (error) {
-    const message = error.response?.data?.message || 'Failed to update user';
-    dispatch(setError(message));
-    return false;
-  } finally {
-    dispatch(setLoading(false));
-  }
-};
-
-export const deleteUser = (id) => async (dispatch) => {
-  try {
-    dispatch(setLoading(true));
-    await axios.delete(`${baseURL}/api/v1/users/${id}`);
-    toast.success('User deleted successfully!');
-  } catch (error) {
-    const message = error.response?.data?.message || 'Failed to delete user';
-    dispatch(setError(message));
-    throw error;
   } finally {
     dispatch(setLoading(false));
   }

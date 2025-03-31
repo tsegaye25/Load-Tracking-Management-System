@@ -1,53 +1,60 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
+  Container,
   Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Collapse,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  Grid,
-  IconButton,
-  MenuItem,
+  Typography,
+  Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
-  TablePagination,
   TableRow,
+  IconButton,
+  Chip,
+  Button,
+  Grid,
   TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Collapse,
   Tooltip,
-  Typography,
-  Paper,
-  InputAdornment,
-  CircularProgress,
-  useTheme,
   alpha,
   FormControl,
   InputLabel,
-  Select
+  Select,
+  Stack,
+  Alert,
+  AlertTitle,
+  MenuItem,
+  Divider,
+  Card,
+  CardContent,
+  CircularProgress,
+  TablePagination,
+  InputAdornment,
+  useTheme
 } from '@mui/material';
 import {
-  KeyboardArrowDown,
-  KeyboardArrowUp,
-  Search as SearchIcon,
-  Refresh as RefreshIcon,
-  Error as ErrorIcon,
+  KeyboardArrowDown as KeyboardArrowDownIcon,
+  KeyboardArrowUp as KeyboardArrowUpIcon,
   Info as InfoIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
-  PendingOutlined as PendingIcon
+  PendingOutlined as PendingIcon,
+  Search as SearchIcon,
+  Refresh as RefreshIcon,
+  Forward as ForwardIcon,
+  Warning as WarningIcon
 } from '@mui/icons-material';
 import { LoadingButton } from '@mui/lab';
 import { toast } from 'react-toastify';
+import axios from 'axios';
 
-const InstructorRow = ({ instructor, courses, onStatusChange }) => {
+const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) => {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
@@ -59,11 +66,65 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
   const [processingErrors, setProcessingErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState('');
+  const [instructorHours, setInstructorHours] = useState(null);
+  const [isResubmitDialogOpen, setIsResubmitDialogOpen] = useState(false);
+  const [selectedCoursesForResubmit, setSelectedCoursesForResubmit] = useState([]);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [selectedCoursesForReject, setSelectedCoursesForReject] = useState([]);
+  const [rejectReason, setRejectReason] = useState('');
 
-  // Calculate totals
+  useEffect(() => {
+    const fetchInstructorHours = async () => {
+      if (instructorId) {
+        try {
+          const response = await fetch(`http://localhost:5000/api/v1/users/hours/${instructorId}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          const data = await response.json();
+          if (data.status === 'success') {
+            setInstructorHours(data.data);
+          }
+        } catch (error) {
+          console.error('Error fetching instructor hours:', error);
+        }
+      } else {
+        console.warn('No instructor ID available for:', instructor);
+      }
+    };
+
+    fetchInstructorHours();
+  }, [instructorId, instructor]);
+
+  // Calculate totals and status counts
   const totalCourses = courses.length;
   const totalWorkload = courses.reduce((sum, course) => sum + (course.totalWorkload || 0), 0);
   const department = courses[0]?.department || 'N/A';
+
+  // Calculate status counts
+  const statusCounts = courses.reduce((acc, course) => {
+    acc[course.status] = (acc[course.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Get status text
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'dean-approved':
+        return 'Approved & Forwarded to Vice-Director';
+      case 'dean-rejected':
+        return 'Returned to Department Head for Review';
+      case 'vice-director-rejected':
+        return 'Rejected by Vice-Director';
+        case 'scientific-director-rejected':
+          return 'Rejected by Scientific Director';
+          case 'finance-rejected':
+            return 'Rejected by Finance';
+      default:
+        return 'Pending Review';
+    }
+  };
 
   // Calculate workload breakdowns
   const workloadStats = useMemo(() => courses.reduce((stats, course) => {
@@ -92,11 +153,8 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
   }), [courses]);
 
   const handleReviewClick = (action) => {
-    // Filter courses that can be reviewed (not already approved/rejected)
-    const reviewableCourses = courses.filter(
-      course => !['dean-approved', 'dean-rejected'].includes(course.status)
-    );
-    setProcessingCourses(reviewableCourses);
+    // Include all courses for approval, regardless of their current status
+    setProcessingCourses(courses);
     setProcessingErrors({});
     setReviewAction(action);
     
@@ -120,79 +178,131 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
     let successCount = 0;
 
     try {
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const baseURL = 'http://localhost:5000';
       
-      // Process all courses in sequence
-      for (const course of processingCourses) {
-        try {
-          const response = await fetch(`${baseURL}/api/v1/courses/${course._id}/dean-review`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: JSON.stringify({
-              status: action === 'approve' ? 'dean-approved' : 'dean-rejected',
-              rejectionReason: action === 'approve' ? undefined : `${selectedCourse}: ${rejectionNotes}`
-            })
-          });
+      // Use bulk approval endpoint
+      try {
+        const response = await fetch(`${baseURL}/api/v1/courses/bulk-dean-review`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            courseIds: processingCourses.map(course => course._id)
+          })
+        });
 
-          if (!response.ok) {
-            const data = await response.json();
-            errors[course._id] = data.message || `Failed to process review for ${course.code}`;
-            continue;
-          }
-
-          const data = await response.json();
-          onStatusChange(course._id, action === 'approve' ? 'dean-approved' : 'dean-rejected');
-          successCount++;
-        } catch (error) {
-          errors[course._id] = `Network error while processing ${course.code}`;
+        const data = await response.json();
+        
+        if (!response.ok) {
+          toast.error(data.message || 'Failed to process courses');
+          return;
         }
+
+        // Update UI for all approved courses
+        processingCourses.forEach(course => {
+          onStatusChange(course._id, 'dean-approved');
+        });
+
+        toast.success(`Successfully approved ${processingCourses.length} courses`);
+      } catch (error) {
+        console.error('Error in bulk processing:', error);
+        toast.error('Failed to process courses. Please try again.');
       }
 
-      setProcessingErrors(errors);
       setReviewDialogOpen(false);
       setSelectedCourse('');
       setRejectionNotes('');
-
-      if (successCount > 0) {
-        toast.success(action === 'approve' ? 
-          `${successCount} courses have been approved and sent to Vice Scientific Director` : 
-          `${successCount} courses have been rejected and sent back to Department Head`);
-      }
-
-      if (Object.keys(errors).length > 0) {
-        toast.error(`Failed to process ${Object.keys(errors).length} courses. Please check the details and try again.`);
-      }
-    } catch (error) {
-      console.error('Error in batch processing:', error);
-      toast.error('Failed to start batch processing. Please try again.');
     } finally {
       setIsSubmitting(false);
       setIsLoading(false);
     }
   };
 
-  // Check course statuses
-  const statusCounts = useMemo(() => courses.reduce((counts, course) => {
-    counts[course.status] = (counts[course.status] || 0) + 1;
-    return counts;
-  }, {}), [courses]);
+  const handleResubmitToViceDirector = async (courseIds) => {
+    try {
+      setIsLoading(true);
+      const response = await axios.post(
+        'http://localhost:5000/api/v1/courses/resubmit-to-vice-director',
+        { courseIds },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+        }
+      );
 
-  const allCoursesApproved = statusCounts['dean-approved'] === courses.length;
-  const allCoursesRejected = statusCounts['dean-rejected'] === courses.length;
-  const hasReviewableCourses = courses.some(course => !['dean-approved', 'dean-rejected'].includes(course.status));
-
-  // Get status color and text
-  const getStatusInfo = () => {
-    if (allCoursesApproved) return { label: 'All Approved', color: 'success' };
-    if (allCoursesRejected) return { label: 'All Rejected', color: 'error' };
-    if (!hasReviewableCourses) return { label: 'Mixed Status', color: 'warning' };
-    return { label: 'Pending Review', color: 'info' };
+      if (response.data.success) {
+        toast.success('Courses resubmitted to Vice Scientific Director successfully');
+        onStatusChange(courseIds, 'pending');
+      } else {
+        toast.error('Failed to resubmit courses');
+      }
+    } catch (error) {
+      console.error('Error resubmitting courses:', error);
+      toast.error('Error resubmitting courses to Vice Scientific Director');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const statusInfo = getStatusInfo();
+  const handleResubmitDialogOpen = (courseIds) => {
+    setSelectedCoursesForResubmit(courseIds);
+    setIsResubmitDialogOpen(true);
+  };
+
+  const handleResubmitDialogClose = () => {
+    setIsResubmitDialogOpen(false);
+    setSelectedCoursesForResubmit([]);
+  };
+
+  const handleResubmitConfirmed = async () => {
+    await handleResubmitToViceDirector(selectedCoursesForResubmit);
+    handleResubmitDialogClose();
+  };
+
+  const handleRejectDialogOpen = (courseIds) => {
+    setSelectedCoursesForReject(courseIds);
+    setIsRejectDialogOpen(true);
+  };
+
+  const handleRejectDialogClose = () => {
+    setIsRejectDialogOpen(false);
+    setSelectedCoursesForReject([]);
+    setRejectReason('');
+  };
+
+  const handleRejectConfirmed = async () => {
+    try {
+      setIsLoading(true);
+      const response = await axios.post(
+        'http://localhost:5000/api/v1/courses/reject-to-department',
+        { 
+          courseIds: selectedCoursesForReject,
+          comment: rejectReason
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        toast.success('Courses rejected and returned to Department Head successfully');
+        onStatusChange(selectedCoursesForReject, 'dean-rejected');
+      } else {
+        toast.error('Failed to reject courses');
+      }
+    } catch (error) {
+      console.error('Error rejecting courses:', error);
+      toast.error('Error rejecting courses');
+    } finally {
+      setIsLoading(false);
+      handleRejectDialogClose();
+    }
+  };
 
   return (
     <>
@@ -204,19 +314,39 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
             aria-label={open ? "Collapse row" : "Expand row"}
             disabled={isLoading}
           >
-            {open ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
+            {open ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
           </IconButton>
         </TableCell>
         <TableCell>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Typography variant="subtitle2">{instructor}</Typography>
-            <Tooltip title={`${statusCounts['dean-approved'] || 0} approved, ${statusCounts['dean-rejected'] || 0} rejected, ${courses.length - (statusCounts['dean-approved'] || 0) - (statusCounts['dean-rejected'] || 0)} pending`}>
-              <Chip 
-                label={statusInfo.label}
-                color={statusInfo.color}
-                size="small"
-                sx={{ ml: 1 }}
-              />
+            <Tooltip title={getStatusText('dean-approved')}>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', ml: 1 }}>
+                {statusCounts['dean-approved'] > 0 && (
+                  <Chip 
+                    size="small" 
+                    color="success" 
+                    label={statusCounts['dean-approved']}
+                    icon={<CheckCircleIcon />}
+                  />
+                )}
+                {statusCounts['dean-rejected'] > 0 && (
+                  <Chip 
+                    size="small" 
+                    color="error" 
+                    label={statusCounts['dean-rejected']}
+                    icon={<CancelIcon />}
+                  />
+                )}
+                {statusCounts['vice-director-rejected'] > 0 && (
+                  <Chip 
+                    size="small" 
+                    color="warning" 
+                    label={statusCounts['vice-director-rejected']}
+                    icon={<PendingIcon />}
+                  />
+                )}
+              </Box>
             </Tooltip>
             {isLoading && (
               <CircularProgress size={16} sx={{ ml: 1 }} />
@@ -227,36 +357,203 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
         <TableCell align="right">{totalCourses}</TableCell>
         <TableCell align="right">{totalWorkload}</TableCell>
         <TableCell>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            {hasReviewableCourses && !isLoading && (
-              <>
-                <Tooltip title={`Approve ${courses.length - (statusCounts['dean-approved'] || 0) - (statusCounts['dean-rejected'] || 0)} pending courses`}>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    color="primary"
-                    onClick={() => handleReviewClick('approve')}
-                  >
-                    Approve All
-                  </Button>
-                </Tooltip>
-                <Tooltip title={`Reject ${courses.length - (statusCounts['dean-approved'] || 0) - (statusCounts['dean-rejected'] || 0)} pending courses`}>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    color="error"
-                    onClick={() => handleReviewClick('reject')}
-                  >
-                    Reject All
-                  </Button>
-                </Tooltip>
-              </>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            {!courses.every(course => course.status === 'vice-director-approved') && (
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                {courses.some(course => course.status === 'vice-director-rejected') ? (
+                  <>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => handleResubmitDialogOpen(
+                          courses
+                            .filter(course => course.status === 'vice-director-rejected')
+                            .map(course => course._id)
+                        )}
+                        startIcon={<CheckCircleIcon />}
+                        disabled={isLoading}
+                      >
+                        Resubmit to Vice Director
+                      </Button>
+                      <Typography variant="caption" color="primary">
+                        Will be forwarded to Vice-Director for review
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="error"
+                        onClick={() => handleRejectDialogOpen(
+                          courses
+                            .filter(course => course.status === 'vice-director-rejected')
+                            .map(course => course._id)
+                        )}
+                        disabled={isLoading}
+                        startIcon={<CancelIcon />}
+                      >
+                        Reject All
+                      </Button>
+                      <Typography variant="caption" color="error">
+                        Will be returned to Department Head for review
+                      </Typography>
+                    </Box>
+                  </>
+                ) : (
+                  courses.some(course => !['dean-approved', 'dean-rejected', 'vice-director-approved', 'scientific-director-approved', 'finance-approved'].includes(course.status)) && (
+                    <>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          onClick={() => handleReviewClick('approve')}
+                          disabled={isLoading || courses.some(course => course.status === 'scientific-director-approved')}
+                          startIcon={<CheckCircleIcon />}
+                        >
+                          Approve All
+                        </Button>
+                        <Typography variant="caption" color="primary">
+                          Will be forwarded to Vice Director for review
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Button
+                          variant="contained"
+                          color="error"
+                          onClick={() => handleRejectDialogOpen(
+                            courses
+                              .filter(course => !['dean-approved', 'dean-rejected', 'vice-director-approved', 'scientific-director-approved'].includes(course.status))
+                              .map(course => course._id)
+                          )}
+                          disabled={isLoading || courses.some(course => course.status === 'scientific-director-approved')}
+                          startIcon={<CancelIcon />}
+                        >
+                          Reject All
+                        </Button>
+                        <Typography variant="caption" color="error">
+                          Will be returned to Department Head for review
+                        </Typography>
+                      </Box>
+                    </>
+                  )
+                )}
+                {isLoading && (
+                  <CircularProgress size={20} />
+                )}
+              </Box>
             )}
-            {isLoading && (
-              <Typography variant="body2" color="textSecondary">
-                Processing...
-              </Typography>
-            )}
+            <Box sx={{ mt: 1 }}>
+              <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {statusCounts['scientific-director-approved'] > 0 && (
+                  <Box sx={{ 
+                    p: 1.5, 
+                    borderRadius: 1, 
+                    bgcolor: alpha('#66bb6a', 0.04),
+                    border: '1px solid',
+                    borderColor: alpha('#66bb6a', 0.15),
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+                  }}>
+                    <CheckCircleIcon sx={{ color: alpha('#388e3c', 0.7) }} />
+                    <Typography variant="subtitle2" sx={{ color: alpha('#2e7d32', 0.85), fontWeight: 600 }}>
+                      Approved by Scientific Director
+                    </Typography>
+                  </Box>
+                )}
+                {statusCounts['vice-director-approved'] > 0 && (
+                  <Box sx={{ 
+                    p: 1.5, 
+                    borderRadius: 1, 
+                    bgcolor: alpha('#42a5f5', 0.04),
+                    border: '1px solid',
+                    borderColor: alpha('#42a5f5', 0.15),
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+                  }}>
+                    <ForwardIcon sx={{ color: alpha('#1976d2', 0.7) }} />
+                    <Typography variant="subtitle2" sx={{ color: alpha('#1565c0', 0.85), fontWeight: 500 }}>
+                      Approved & Forwarded to Scientific Director
+                    </Typography>
+                  </Box>
+                )}
+                {statusCounts['dean-approved'] > 0 && (
+                  <Box sx={{ 
+                    p: 1.5, 
+                    borderRadius: 1, 
+                    bgcolor: alpha('#42a5f5', 0.04),
+                    border: '1px solid',
+                    borderColor: alpha('#42a5f5', 0.15),
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+                  }}>
+                    <ForwardIcon sx={{ color: alpha('#1976d2', 0.7) }} />
+                    <Typography variant="subtitle2" sx={{ color: alpha('#1565c0', 0.85), fontWeight: 500 }}>
+                      Approved & Forwarded to Vice Director
+                    </Typography>
+                  </Box>
+                )}
+                {statusCounts['dean-rejected'] > 0 && (
+                  <Box sx={{ 
+                    p: 1.5, 
+                    borderRadius: 1, 
+                    bgcolor: alpha('#ef5350', 0.04),
+                    border: '1px solid',
+                    borderColor: alpha('#ef5350', 0.15),
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+                  }}>
+                    <CancelIcon sx={{ color: alpha('#d32f2f', 0.7) }} />
+                    <Typography variant="subtitle2" sx={{ color: alpha('#c62828', 0.85), fontWeight: 500 }}>
+                      Returned to Department Head
+                    </Typography>
+                  </Box>
+                )}
+                {statusCounts['vice-director-rejected'] > 0 && (
+                  <Box sx={{ 
+                    p: 1.5, 
+                    borderRadius: 1, 
+                    bgcolor: alpha('#ffa726', 0.04),
+                    border: '1px solid',
+                    borderColor: alpha('#ffa726', 0.15),
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+                  }}>
+                    <WarningIcon sx={{ color: alpha('#f57c00', 0.7) }} />
+                    <Typography variant="subtitle2" sx={{ color: alpha('#ef6c00', 0.85), fontWeight: 500 }}>
+                      Rejected by Vice-Director
+                    </Typography>
+                  </Box>
+                )}
+                {Object.keys(statusCounts).length === 0 && (
+                  <Box sx={{ 
+                    p: 1.5, 
+                    borderRadius: 1, 
+                    bgcolor: alpha('#90a4ae', 0.04),
+                    border: '1px solid',
+                    borderColor: alpha('#90a4ae', 0.15),
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+                  }}>
+                    <InfoIcon sx={{ color: alpha('#546e7a', 0.7) }} />
+                    <Typography variant="subtitle2" sx={{ color: alpha('#455a64', 0.85) }}>
+                      No courses to review
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </Box>
           </Box>
         </TableCell>
       </TableRow>
@@ -359,7 +656,9 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
                                 Total Additional Hours
                               </Typography>
                               <Typography variant="h6">
-                                {workloadStats.hdpHours + workloadStats.positionHours + workloadStats.branchAdvisorHours}
+                                {instructorHours ? 
+                                  instructorHours.hdpHour + instructorHours.positionHour + instructorHours.batchAdvisor :
+                                  'Loading...'}
                               </Typography>
                             </Box>
                           </Grid>
@@ -367,15 +666,21 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                 <Typography variant="body2">HDP Hours:</Typography>
-                                <Typography variant="body2" fontWeight="medium">{workloadStats.hdpHours}</Typography>
+                                <Typography variant="body2" fontWeight="medium">
+                                  {instructorHours?.hdpHour || 0}
+                                </Typography>
                               </Box>
                               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                 <Typography variant="body2">Position Hours:</Typography>
-                                <Typography variant="body2" fontWeight="medium">{workloadStats.positionHours}</Typography>
+                                <Typography variant="body2" fontWeight="medium">
+                                  {instructorHours?.positionHour || 0}
+                                </Typography>
                               </Box>
                               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="body2">Branch Advisor Hours:</Typography>
-                                <Typography variant="body2" fontWeight="medium">{workloadStats.branchAdvisorHours}</Typography>
+                                <Typography variant="body2">Batch Advisor Hours:</Typography>
+                                <Typography variant="body2" fontWeight="medium">
+                                  {instructorHours?.batchAdvisor || 0}
+                                </Typography>
                               </Box>
                             </Box>
                           </Grid>
@@ -398,7 +703,7 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
                         label={`${Object.keys(processingErrors).length} Errors`}
                         color="error"
                         size="small"
-                        icon={<ErrorIcon />}
+                        icon={<InfoIcon />}
                         sx={{ mr: 1 }}
                       />
                     </Tooltip>
@@ -411,79 +716,23 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
                     <TableRow>
                       <TableCell>Code</TableCell>
                       <TableCell>Title</TableCell>
-                      <TableCell align="center" colSpan={4} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                        <Tooltip title="Total hours allocated for course credit, lectures, labs, and tutorials">
-                          <Typography variant="subtitle2" color="primary">Credit Hours</Typography>
+                      <TableCell>Credit Hours</TableCell>
+                      <TableCell colSpan={3} align="center">Number of Sections</TableCell>
+                      <TableCell colSpan={3} align="center">
+                        <Tooltip title="These hours are specific to the instructor and are the same across all their courses">
+                          
                         </Tooltip>
                       </TableCell>
-                      <TableCell align="center" colSpan={3} sx={{ bgcolor: alpha(theme.palette.secondary.main, 0.05) }}>
-                        <Tooltip title="Number of sections for lectures, labs, and tutorials">
-                          <Typography variant="subtitle2" color="secondary">Number of Sections</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="center" colSpan={3} sx={{ bgcolor: alpha(theme.palette.info.main, 0.05) }}>
-                        <Tooltip title="Additional hours for HDP, position duties, and branch advisory">
-                          <Typography variant="subtitle2" color="info">Additional Hours</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell>Status</TableCell>
+                        <TableCell>Status</TableCell>
+                      
                     </TableRow>
                     <TableRow>
                       <TableCell />
                       <TableCell />
-                      {/* Credit Hours Subheaders */}
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                        <Tooltip title="Total credit hours for the course">
-                          <Typography variant="body2" color="primary">Credit</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                        <Tooltip title="Hours allocated for lectures">
-                          <Typography variant="body2" color="primary">Lecture</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                        <Tooltip title="Hours allocated for laboratory sessions">
-                          <Typography variant="body2" color="primary">Lab</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                        <Tooltip title="Hours allocated for tutorials">
-                          <Typography variant="body2" color="primary">Tutorial</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      {/* Section Numbers Subheaders */}
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.secondary.main, 0.05) }}>
-                        <Tooltip title="Number of lecture sections">
-                          <Typography variant="body2" color="secondary">Lecture</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.secondary.main, 0.05) }}>
-                        <Tooltip title="Number of laboratory sections">
-                          <Typography variant="body2" color="secondary">Lab</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.secondary.main, 0.05) }}>
-                        <Tooltip title="Number of tutorial sections">
-                          <Typography variant="body2" color="secondary">Tutorial</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      {/* Additional Hours Subheaders */}
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.info.main, 0.05) }}>
-                        <Tooltip title="Higher Diploma Program hours">
-                          <Typography variant="body2" color="info">HDP</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.info.main, 0.05) }}>
-                        <Tooltip title="Position-related duty hours">
-                          <Typography variant="body2" color="info">Position</Typography>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="right" sx={{ bgcolor: alpha(theme.palette.info.main, 0.05) }}>
-                        <Tooltip title="Branch advisory hours">
-                          <Typography variant="body2" color="info">Branch</Typography>
-                        </Tooltip>
-                      </TableCell>
+                      <TableCell />
+                      <TableCell align="center">Lecture</TableCell>
+                      <TableCell align="center">Lab</TableCell>
+                      <TableCell align="center">Tutorial</TableCell>
                       <TableCell />
                     </TableRow>
                   </TableHead>
@@ -492,21 +741,33 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
                       <TableRow 
                         key={course._id}
                         sx={{
-                          bgcolor: processingErrors[course._id] 
+                          bgcolor: processingErrors[course._id]
                             ? alpha(theme.palette.error.main, 0.1)
-                            : course.status === 'dean-approved'
+                            : course.status === 'vice-director-approved'
                               ? alpha(theme.palette.success.main, 0.05)
-                              : course.status === 'dean-rejected'
-                                ? alpha(theme.palette.error.main, 0.05)
-                                : 'inherit',
+                              : course.status === 'dean-approved'
+                                ? alpha(theme.palette.success.main, 0.05)
+                                : course.status === 'dean-rejected'
+                                  ? alpha(theme.palette.error.main, 0.05)
+                                  : course.status === 'vice-director-rejected'
+                                    ? alpha(theme.palette.warning.main, 0.05)
+                                    : course.status === 'scientific-director-approved'
+                                      ? alpha(theme.palette.success.main, 0.05)
+                                      : 'inherit',
                           '&:hover': {
                             bgcolor: processingErrors[course._id] 
                               ? alpha(theme.palette.error.main, 0.15)
-                              : course.status === 'dean-approved'
+                              : course.status === 'vice-director-approved'
                                 ? alpha(theme.palette.success.main, 0.1)
-                                : course.status === 'dean-rejected'
-                                  ? alpha(theme.palette.error.main, 0.1)
-                                  : theme.palette.action.hover
+                                : course.status === 'dean-approved'
+                                  ? alpha(theme.palette.success.main, 0.1)
+                                  : course.status === 'dean-rejected'
+                                    ? alpha(theme.palette.error.main, 0.1)
+                                    : course.status === 'vice-director-rejected'
+                                      ? alpha(theme.palette.warning.main, 0.1)
+                                      : course.status === 'scientific-director-approved'
+                                        ? alpha(theme.palette.success.main, 0.1)
+                                        : theme.palette.action.hover
                           }
                         }}
                       >
@@ -517,7 +778,7 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
                             </Typography>
                             {processingErrors[course._id] && (
                               <Tooltip title={processingErrors[course._id]}>
-                                <ErrorIcon 
+                                <InfoIcon 
                                   color="error" 
                                   fontSize="small" 
                                   sx={{ ml: 1, cursor: 'help' }} 
@@ -531,175 +792,178 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
                             {course.title}
                           </Typography>
                         </TableCell>
-                        {/* Credit Hours */}
-                        <TableCell align="right">
+                        <TableCell>
                           <Typography variant="body2" fontWeight="medium">
                             {course.Hourfor?.creaditHours || 0}
                           </Typography>
                         </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {course.Hourfor?.lecture || 0}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {course.Hourfor?.lab || 0}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {course.Hourfor?.tutorial || 0}
-                          </Typography>
-                        </TableCell>
-                        {/* Number of Sections */}
-                        <TableCell align="right">
+                        <TableCell align="center">
                           <Typography variant="body2">
                             {course.Number_of_Sections?.lecture || 0}
                           </Typography>
                         </TableCell>
-                        <TableCell align="right">
+                        <TableCell align="center">
                           <Typography variant="body2">
                             {course.Number_of_Sections?.lab || 0}
                           </Typography>
                         </TableCell>
-                        <TableCell align="right">
+                        <TableCell align="center">
                           <Typography variant="body2">
                             {course.Number_of_Sections?.tutorial || 0}
                           </Typography>
                         </TableCell>
-                        {/* Additional Hours */}
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {course.hdp || 0}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {course.position || 0}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2">
-                            {course.branchAdvisor || 0}
-                          </Typography>
-                        </TableCell>
+                        
+                       
                         <TableCell>
-                          {course.status === 'dean-approved' && (
-                            <Tooltip title="Course has been approved and sent to Vice Scientific Director">
-                              <Chip 
-                                label="Approved" 
-                                color="success" 
-                                size="small"
-                                icon={<CheckCircleIcon />}
-                                sx={{ 
-                                  '& .MuiChip-icon': { 
-                                    fontSize: 16,
-                                    mr: -0.5 
-                                  }
-                                }}
-                              />
-                            </Tooltip>
-                          )}
-                          {course.status === 'dean-rejected' && (
-                            <Tooltip title="Course has been rejected and sent back to Department Head">
-                              <Chip 
-                                label="Rejected" 
-                                color="error" 
-                                size="small"
-                                icon={<CancelIcon />}
-                                sx={{ 
-                                  '& .MuiChip-icon': { 
-                                    fontSize: 16,
-                                    mr: -0.5 
-                                  }
-                                }}
-                              />
-                            </Tooltip>
-                          )}
-                          {!['dean-approved', 'dean-rejected'].includes(course.status) && (
-                            <Tooltip title="Course is pending review">
-                              <Chip 
-                                label="Pending" 
-                                color="warning" 
-                                size="small"
-                                icon={<PendingIcon />}
-                                sx={{ 
-                                  '& .MuiChip-icon': { 
-                                    fontSize: 16,
-                                    mr: -0.5 
-                                  }
-                                }}
-                              />
-                            </Tooltip>
-                          )}
+                          <Chip 
+                            label={course.status === 'vice-director-rejected' ? 'Rejected' : course.status}
+                            color={
+                              course.status === 'vice-director-rejected' ? 'error' :
+                              course.status === 'vice-director-approved' ? 'success' :
+                              course.status === 'scientific-director-approved' ? 'success' :
+                              'default'
+                            }
+                            size="small"
+                            icon={course.status === 'vice-director-rejected' ? <CancelIcon /> : undefined}
+                          />
                         </TableCell>
+                        
                       </TableRow>
                     ))}
-
-<TableRow sx={{ 
-  bgcolor: alpha(theme.palette.primary.main, 0.05),
-  fontWeight: 'bold'
-}}>
-  <TableCell colSpan={2}>
-    <Typography variant="subtitle2">TOTALS</Typography>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Credit Hours">
-      <Typography variant="subtitle2">{workloadStats.creditHours}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Lecture Hours">
-      <Typography variant="subtitle2">{workloadStats.lectureHours}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Lab Hours">
-      <Typography variant="subtitle2">{workloadStats.labHours}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Tutorial Hours">
-      <Typography variant="subtitle2">{workloadStats.tutorialHours}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Lecture Sections">
-      <Typography variant="subtitle2">{workloadStats.lectureSections}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Lab Sections">
-      <Typography variant="subtitle2">{workloadStats.labSections}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Tutorial Sections">
-      <Typography variant="subtitle2">{workloadStats.tutorialSections}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total HDP Hours">
-      <Typography variant="subtitle2">{workloadStats.hdpHours}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Position Hours">
-      <Typography variant="subtitle2">{workloadStats.positionHours}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell align="right">
-    <Tooltip title="Total Branch Hours">
-      <Typography variant="subtitle2">{workloadStats.branchHours}</Typography>
-    </Tooltip>
-  </TableCell>
-  <TableCell />
-</TableRow>
-
+                    {/* Totals Row */}
+                    <TableRow sx={{ 
+                      bgcolor: alpha(theme.palette.primary.main, 0.05),
+                      fontWeight: 'bold'
+                    }}>
+                      <TableCell colSpan={2}>
+                        <Typography variant="subtitle2">TOTALS</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="subtitle2">
+                          {courses.reduce((sum, course) => sum + (course.Hourfor?.creaditHours || 0), 0)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography variant="subtitle2">
+                          {courses.reduce((sum, course) => sum + (course.Number_of_Sections?.lecture || 0), 0)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography variant="subtitle2">
+                          {courses.reduce((sum, course) => sum + (course.Number_of_Sections?.lab || 0), 0)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography variant="subtitle2">
+                          {courses.reduce((sum, course) => sum + (course.Number_of_Sections?.tutorial || 0), 0)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell />
+                    </TableRow>
                   </TableBody>
                 </Table>
               </TableContainer>
+
+              {/* Rejection Details Section - Single common section for all rejected courses */}
+              {courses.some(course => course.status === 'vice-director-rejected') && (
+                <Box 
+                  sx={{ 
+                    mt: 4,
+                    p: 3,
+                    backgroundColor: (theme) => alpha(theme.palette.error.main, 0.05),
+                    borderRadius: 1,
+                    border: '1px solid',
+                    borderColor: 'error.light'
+                  }}
+                >
+                  <Typography variant="h6" color="error" gutterBottom>
+                    Courses Rejected by Vice Scientific Director
+                  </Typography>
+
+                  {/* Rejected Courses List */}
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Rejected Courses:
+                    </Typography>
+                    <Grid container spacing={1}>
+                      {courses
+                        .filter(course => course.status === 'vice-director-rejected')
+                        .map(course => (
+                          <Grid item xs={12} sm={6} md={4} key={course._id}>
+                            <Typography variant="body2">
+                              • {course.code} - {course.title}
+                            </Typography>
+                          </Grid>
+                        ))}
+                    </Grid>
+                  </Box>
+
+                  <Divider sx={{ my: 2 }} />
+
+                  {/* Common Rejection Details */}
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={8}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        Rejection Reason:
+                      </Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          whiteSpace: 'pre-wrap',
+                          backgroundColor: 'background.paper',
+                          p: 2,
+                          borderRadius: 1,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}
+                      >
+                        {courses
+                          .find(course => course.status === 'vice-director-rejected')
+                          ?.approvalHistory
+                          ?.filter(h => h.status === 'vice-director-rejected')
+                          .sort((a, b) => new Date(b.date) - new Date(a.date))[0]?.comment || 'No reason provided'}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        Rejection Details:
+                      </Typography>
+                      <Stack spacing={1}>
+                        <Typography variant="body2">
+                          <strong>Date:</strong> {(() => {
+                            const rejectionHistory = courses
+                              .find(course => course.status === 'vice-director-rejected')
+                              ?.approvalHistory
+                              ?.filter(h => h.status === 'vice-director-rejected')
+                              .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+                            return rejectionHistory ? 
+                              new Date(rejectionHistory.date).toLocaleDateString() : 'N/A';
+                          })()}
+                        </Typography>
+                        <Typography variant="body2">
+                          <strong>Total Courses:</strong> {courses.filter(c => c.status === 'vice-director-rejected').length}
+                        </Typography>
+                      </Stack>
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
+              <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                {courses.some(course => course.status === 'vice-director-rejected') && (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => handleResubmitToViceDirector(
+                      courses
+                        .filter(course => course.status === 'vice-director-rejected')
+                        .map(course => course._id)
+                    )}
+                    startIcon={<CheckCircleIcon />}
+                  >
+                    Resubmit to Vice Director
+                  </Button>
+                )}
+              </Box>
             </Box>
           </Collapse>
         </TableCell>
@@ -819,6 +1083,83 @@ const InstructorRow = ({ instructor, courses, onStatusChange }) => {
           </LoadingButton>
         </DialogActions>
       </Dialog>
+
+      {/* Resubmit Confirmation Dialog */}
+      <Dialog
+        open={isResubmitDialogOpen}
+        onClose={handleResubmitDialogClose}
+        aria-labelledby="resubmit-dialog-title"
+        aria-describedby="resubmit-dialog-description"
+      >
+        <DialogTitle id="resubmit-dialog-title">
+          Resubmit Courses to Vice Director
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="resubmit-dialog-description">
+            Are you sure you want to resubmit {selectedCoursesForResubmit.length} course(s) to the Vice Scientific Director for review?
+            This action will send the courses back for another review.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleResubmitDialogClose} color="inherit">
+            Cancel
+          </Button>
+          <LoadingButton
+            onClick={handleResubmitConfirmed}
+            loading={isLoading}
+            color="primary"
+            variant="contained"
+            autoFocus
+          >
+            Resubmit
+          </LoadingButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reject Confirmation Dialog */}
+      <Dialog
+        open={isRejectDialogOpen}
+        onClose={handleRejectDialogClose}
+        aria-labelledby="reject-dialog-title"
+        aria-describedby="reject-dialog-description"
+      >
+        <DialogTitle id="reject-dialog-title">
+          Reject Courses and Return to Department Head
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="reject-dialog-description" sx={{ mb: 2 }}>
+            Are you sure you want to reject {selectedCoursesForReject.length} course(s) and return them to the Department Head?
+          </DialogContentText>
+          <TextField
+            autoFocus
+            margin="dense"
+            id="rejection-reason"
+            label="Rejection Reason"
+            type="text"
+            fullWidth
+            multiline
+            rows={3}
+            variant="outlined"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            required
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleRejectDialogClose} color="inherit">
+            Cancel
+          </Button>
+          <LoadingButton
+            onClick={handleRejectConfirmed}
+            loading={isLoading}
+            color="error"
+            variant="contained"
+            disabled={!rejectReason.trim()}
+          >
+            Reject and Return
+          </LoadingButton>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };
@@ -842,7 +1183,7 @@ const SchoolCourses = () => {
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/courses/school-courses`, {
+      const response = await fetch('http://localhost:5000/api/v1/courses/school-courses', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -1051,7 +1392,7 @@ const SchoolCourses = () => {
               <TableRow>
                 <TableCell colSpan={6} align="center">
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3, color: 'error.main' }}>
-                    <ErrorIcon sx={{ mr: 1 }} />
+                    <InfoIcon sx={{ mr: 1 }} />
                     <Typography>{error}</Typography>
                   </Box>
                 </TableCell>
@@ -1067,14 +1408,19 @@ const SchoolCourses = () => {
               </TableRow>
             ) : Object.entries(groupedByInstructor)
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map(([instructor, courses]) => (
-                  <InstructorRow 
-                    key={instructor} 
-                    instructor={instructor} 
-                    courses={courses}
-                    onStatusChange={handleStatusChange}
-                  />
-                ))}
+                .map(([instructor, courses]) => {
+                  // Get instructor ID from the first course
+                  const instructorId = courses[0]?.instructor?._id;
+                  return (
+                    <InstructorRow 
+                      key={instructor} 
+                      instructor={instructor} 
+                      instructorId={instructorId}
+                      courses={courses}
+                      onStatusChange={handleStatusChange}
+                    />
+                  );
+                })}
           </TableBody>
         </Table>
         <TablePagination
