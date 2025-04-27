@@ -48,10 +48,14 @@ export const updateProfile = createAsyncThunk(
     try {
       const { token } = getState().auth;
       const config = {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          ...(userData instanceof FormData ? {} : { 'Content-Type': 'application/json' })
+        }
       };
+      
       const { data } = await axios.patch(`${baseURL}/api/v1/users/updateMe`, userData, config);
-      const updatedUser = { ...getState().auth.user, ...data.data };
+      const updatedUser = data.data.user;
       return { user: updatedUser, token };
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Profile update failed');
@@ -247,11 +251,10 @@ export const getInstructors = () => async (dispatch, getState) => {
       throw new Error('No instructors data received from server');
     }
 
-    // Filter instructors based on department head's department and school
+    // Filter instructors based on department head's school only
     const filteredInstructors = user?.role === 'department-head'
       ? data.data.instructors.filter(instructor => 
-          instructor.department === user.department && 
-          instructor.school === user.school)
+          instructor.school === user.school) // Only filter by school, not department
       : data.data.instructors;
 
     return filteredInstructors;

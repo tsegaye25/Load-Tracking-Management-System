@@ -1,21 +1,80 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import {
-  Container, Box, Typography, Button, Dialog, DialogTitle,
-  DialogContent, DialogActions, TextField, MenuItem, Grid,
-  IconButton, Card, CardContent, Divider, FormControl,
-  InputLabel, Select, Chip, CircularProgress, Accordion,
-  AccordionSummary, AccordionDetails, FormHelperText,
-  Pagination, Stack, alpha, DialogContentText, Tabs, Tab,
-  Badge, TableContainer, Table, TableHead, TableRow, TableCell, TableBody,
-  Tooltip
+import { useNavigate } from 'react-router-dom';
+import { 
+  Container, 
+  Box, 
+  Typography, 
+  Button, 
+  TextField, 
+  Grid, 
+  Paper, 
+  Dialog, 
+  DialogTitle, 
+  DialogContent, 
+  DialogContentText, 
+  DialogActions, 
+  MenuItem, 
+  Select, 
+  FormControl, 
+  InputLabel, 
+  FormHelperText, 
+  IconButton, 
+  Tooltip, 
+  Chip, 
+  Divider, 
+  Tabs, 
+  Tab, 
+  InputAdornment,
+  Badge,
+  FormControlLabel,
+  Checkbox,
+  Alert,
+  AlertTitle,
+  Card, 
+  CardContent, 
+  CircularProgress, 
+  Accordion,
+  AccordionSummary, 
+  AccordionDetails,
+  Pagination, 
+  Stack, 
+  alpha, 
+  TableContainer, 
+  Table, 
+  TableHead, 
+  TableRow, 
+  TableCell, 
+  TableBody,
+  Skeleton
 } from '@mui/material';
 import { LoadingButton } from '@mui/lab';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, 
-  ExpandMore as ExpandMoreIcon, AssignmentInd as AssignmentIndIcon, 
-  Search as SearchIcon, ArrowBack as ArrowBackIcon, 
-  FilterList as FilterListIcon, Send as SendIcon, AssignmentInd,
-  CheckCircleIcon, CancelIcon
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { 
+  Add as AddIcon, 
+  Edit as EditIcon, 
+  Delete as DeleteIcon, 
+  ExpandMore as ExpandMoreIcon, 
+  AssignmentInd as AssignmentIndIcon, 
+  Search as SearchIcon, 
+  ArrowBack as ArrowBackIcon, 
+  FilterList as FilterListIcon, 
+  Send as SendIcon, 
+  CheckCircle as CheckCircleIcon, 
+  Close as CloseIcon, 
+  School as SchoolIcon, 
+  Business as BusinessIcon,
+  Pending as PendingIcon,
+  Warning as WarningIcon,
+  Check as CheckIcon,
+  Cancel as CancelIcon,
+  Refresh as RefreshIcon,
+  ViewList as ViewListIcon,
+  AssignmentTurnedIn as AssignmentTurnedInIcon,
+  AddCircleOutline as AddCircleOutlineIcon,
+  HourglassEmpty as HourglassEmptyIcon,
+  PeopleAlt as PeopleAltIcon
 } from '@mui/icons-material';
 import * as Yup from 'yup';
 import { useFormik } from 'formik';
@@ -79,13 +138,11 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
   // Instructor Permissions
   const canSelfAssign = isInstructor && 
     !course.instructor && 
-    course.department === user.department &&
     course.school === user.school &&
     (course.status !== 'pending' && // Not pending approval
      !(course.status === 'rejected' && course.requestedBy?._id === user._id)); // Can self-assign if rejected by someone else
 
   const canRequestApproval = isInstructor && 
-    course.department === user.department && 
     course.school === user.school &&
     course.status === 'rejected';
 
@@ -120,57 +177,172 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
   // Show requestedBy only for pending courses
   const showRequestedBy = course.status === 'pending' && course.requestedBy;
 
+  const [expanded, setExpanded] = useState(false);
+  
+  const handleExpandClick = (e) => {
+    e.stopPropagation();
+    setExpanded(!expanded);
+  };
+
+  // Check if the course is rejected
+  const isRejected = course.status === 'rejected' || 
+                    course.status === 'department-head-rejected' || 
+                    course.status === 'dean-rejected' || 
+                    course.status === 'vice-director-rejected' || 
+                    course.status === 'scientific-director-rejected' || 
+                    course.status === 'finance-rejected';
+  
+  // Format rejection date with time if available
+  const rejectionDate = course.updatedAt ? new Date(course.updatedAt).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  }) : 'Unknown';
+  
+  // Format rejection time if available
+  const rejectionTime = course.updatedAt ? new Date(course.updatedAt).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }) : '';
+  
+  // Get rejection reason if available
+  const rejectionReason = course.rejectionReason || 'No reason provided';
+  
+  // Get rejector role
+  const rejectorRole = getRejectorRole(course.rejectedBy);
+                    
   return (
-    <Accordion>
-      <AccordionSummary
-        expandIcon={<ExpandMoreIcon />}
+    <Box sx={{ position: 'relative', mb: 2 }}>
+      <Paper
+        elevation={2}
         sx={{
-          '& .MuiAccordionSummary-content': {
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexGrow: 1
+          mb: isRejected ? 0 : 2,
+          borderRadius: 2,
+          overflow: 'hidden',
+          transition: 'all 0.3s ease',
+          position: 'relative',
+          ...(isRejected && {
+            borderLeft: '4px solid',
+            borderColor: 'error.main',
+          }),
+          '&:hover': {
+            boxShadow: (theme) => `0 8px 24px ${alpha(theme.palette.primary.main, 0.15)}`,
+            transform: 'translateY(-2px)'
           }
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexGrow: 1 }}>
-          <Box>
-            <Typography variant="h6">
+      {/* Card Header */}
+      <Box
+        sx={{
+          p: { xs: 2, md: 3 },
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          gap: { xs: 1.5, sm: 2 },
+          borderBottom: expanded ? 1 : 0,
+          borderColor: 'divider',
+          bgcolor: (theme) => expanded ? alpha(theme.palette.primary.main, 0.04) : 'transparent'
+        }}
+      >
+        {/* Course Title and Basic Info */}
+        <Box sx={{ width: '100%' }}>
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { xs: 'flex-start', sm: 'center' }, 
+            gap: { xs: 1, sm: 1 }, 
+            mb: 1,
+            width: '100%'
+          }}>
+            <Typography 
+              variant="h6" 
+              sx={{ 
+                fontWeight: 600, 
+                fontSize: { xs: '0.95rem', sm: '1rem', md: '1.1rem' },
+                color: 'primary.main',
+                lineHeight: 1.3,
+                wordBreak: 'break-word'
+              }}
+            >
               {course.code} - {course.title}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {course.school} | {course.department}
-            </Typography>
           </Box>
-          <Stack direction="row" spacing={1}>
-            <Chip
-              label={course.status === 'rejected' && course.rejectedInstructor
-                ? `Rejected: ${course.rejectedInstructor.name}`
-                : `Status: ${course.status}`}
-              color={getStatusColor(course.status)}
-              size="small"
-            />
-            {course.instructor && (
-              <Chip
-                label={`Instructor: ${course.instructor.name}`}
-                color="primary"
-                variant="outlined"
-                size="small"
-              />
-            )}
-            {showRequestedBy && (
-              <Chip
-                label={`Requested by: ${course.requestedBy.name}`}
-                color="info"
-                variant="outlined"
-                size="small"
-              />
-            )}
-          </Stack>
+          
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' },
+            flexWrap: 'wrap', 
+            gap: { xs: 0.75, sm: 1 }, 
+            mb: { xs: 2, sm: 0 }
+          }}>
+            <Typography 
+              variant="body2" 
+              color="text.secondary" 
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 0.5,
+                mb: { xs: 0.5, sm: 0 }
+              }}
+            >
+              <BusinessIcon sx={{ fontSize: 16 }} />
+              {course.department}
+            </Typography>
+            
+            <Box sx={{ 
+              display: 'flex', 
+              flexWrap: 'wrap', 
+              gap: 0.75,
+              mt: { xs: 0.5, sm: 0 }
+            }}>
+              {course.instructor && (
+                <Chip
+                  label={`Instructor: ${course.instructor.name}`}
+                  color="primary"
+                  variant="outlined"
+                  size="small"
+                  sx={{ 
+                    height: 24,
+                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                    '& .MuiChip-label': {
+                      px: { xs: 1, sm: 1.2 }
+                    }
+                  }}
+                />
+              )}
+              {showRequestedBy && (
+                <Chip
+                  label={`Requested by: ${course.requestedBy.name}`}
+                  color="info"
+                  variant="outlined"
+                  size="small"
+                  sx={{ 
+                    height: 24,
+                    fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                    '& .MuiChip-label': {
+                      px: { xs: 1, sm: 1.2 }
+                    }
+                  }}
+                />
+              )}
+            </Box>
+          </Box>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+
+        {/* Action Buttons */}
+        <Box sx={{ 
+          display: 'flex', 
+          flexWrap: 'wrap',
+          gap: { xs: 0.75, sm: 1 }, 
+          alignItems: 'center',
+          justifyContent: { xs: 'flex-start', sm: 'flex-end' },
+          width: { xs: '100%', sm: 'auto' },
+          mt: { xs: 1, sm: 0 }
+        }}>
           {canReviewCourse && (
-            <Box sx={{ display: 'flex', gap: 1 }}>
+            <>
               {canAssignInstructor && (
                 <Button
                   variant="contained"
@@ -181,30 +353,35 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                   }}
                   startIcon={<AssignmentIndIcon />}
                   color="primary"
+                  sx={{ borderRadius: 1.5 }}
                 >
-                  Assign Instructor
+                  Assign
                 </Button>
               )}
-              <IconButton 
-                size="small" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(course);
-                }}
-                title="Edit Course"
-              >
-                <EditIcon />
-              </IconButton>
-              <IconButton 
-                size="small" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(course);
-                }}
-                title="Delete Course"
-              >
-                <DeleteIcon />
-              </IconButton>
+              <Tooltip title="Edit Course">
+                <IconButton 
+                  size="small" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(course);
+                  }}
+                  sx={{ bgcolor: alpha('#000', 0.04) }}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Delete Course">
+                <IconButton 
+                  size="small" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(course);
+                  }}
+                  sx={{ bgcolor: alpha('#000', 0.04) }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
               {course.status === 'pending' && (
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <Button
@@ -212,6 +389,7 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                     color="success"
                     size="small"
                     onClick={(e) => { e.stopPropagation(); onApprove(course); }}
+                    sx={{ borderRadius: 1.5 }}
                   >
                     Approve
                   </Button>
@@ -220,6 +398,7 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                     color="error"
                     size="small"
                     onClick={(e) => { e.stopPropagation(); onReject(course); }}
+                    sx={{ borderRadius: 1.5 }}
                   >
                     Reject
                   </Button>
@@ -232,11 +411,12 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                   size="small"
                   onClick={(e) => { e.stopPropagation(); onResubmitToDean(course); }}
                   startIcon={<SendIcon />}
+                  sx={{ borderRadius: 1.5 }}
                 >
-                  Resubmit to Dean
+                  Resubmit
                 </Button>
               )}
-            </Box>
+            </>
           )}
           {canSelfAssign && (
             <Button
@@ -244,201 +424,430 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
               size="small"
               startIcon={<AssignmentIndIcon />}
               onClick={(e) => { e.stopPropagation(); onSelfAssign(course); }}
+              sx={{ borderRadius: 1.5 }}
             >
               Self-Assign
             </Button>
           )}
+          <Tooltip title={expanded ? "Hide Details" : "Show Details"}>
+            <IconButton 
+              onClick={handleExpandClick}
+              sx={{
+                transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.3s',
+                bgcolor: alpha('#000', 0.04)
+              }}
+              size="small"
+            >
+              <ExpandMoreIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
-      </AccordionSummary>
-      <AccordionDetails>
-        <Grid container spacing={3}>
-          {/* Course and Instructor Information - First Row */}
+      </Box>
+
+      {/* Expandable Content */}
+      <Box
+        sx={{
+          maxHeight: expanded ? '1500px' : '0px',
+          overflow: 'hidden',
+          transition: 'max-height 0.4s ease',
+          p: expanded ? { xs: 2, md: 3 } : 0,
+          pt: expanded ? { xs: 1.5, md: 2 } : 0
+        }}
+      >
+        <Grid container spacing={{ xs: 2, md: 3 }}>
+          {/* Course Details */}
           <Grid item xs={12} md={6}>
-            <Typography variant="subtitle1" color="primary" gutterBottom>
-              Course Details
-            </Typography>
-            <Box sx={{ ml: 2 }}>
-              <Typography variant="body2">
-                <strong>Code:</strong> {course.code}
+            <Box sx={{
+              p: { xs: 1.5, sm: 2 },
+              borderRadius: 2,
+              bgcolor: (theme) => alpha(theme.palette.primary.light, 0.05),
+              height: '100%',
+              overflow: 'hidden'
+            }}>
+              <Typography 
+                variant="subtitle1" 
+                color="primary.main" 
+                gutterBottom 
+                sx={{ 
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  pb: 1,
+                  borderBottom: 1,
+                  borderColor: (theme) => alpha(theme.palette.primary.main, 0.1)
+                }}
+              >
+                <SchoolIcon fontSize="small" />
+                Course Details
               </Typography>
-              <Typography variant="body2">
-                <strong>Title:</strong> {course.title}
-              </Typography>
-              <Typography variant="body2">
-                <strong>School:</strong> {course.school}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Department:</strong> {course.department}
-              </Typography>
+              
+              <Grid container spacing={{ xs: 1.5, sm: 2 }} sx={{ mt: { xs: 0.5, sm: 1 } }}>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Code
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.code}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Title
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.title}
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Department
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.department}
+                  </Typography>
+                </Grid>
+              </Grid>
+
               {course.instructor && (
                 <>
-                  <Divider sx={{ my: 1 }} />
-                  <Typography variant="body2">
-                    <strong>Instructor:</strong> {course.instructor.name}
+                  <Divider sx={{ my: 2 }} />
+                  <Typography 
+                    variant="subtitle2" 
+                    color="primary.main" 
+                    sx={{ 
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      mb: 1.5
+                    }}
+                  >
+                    <AssignmentIndIcon fontSize="small" />
+                    Instructor Information
                   </Typography>
+                  
+                  <Typography variant="body1" sx={{ mb: 1 }}>
+                    {course.instructor.name}
+                  </Typography>
+                  
                   {instructorHours && (
-                    <>
-                      <Typography variant="body2">
-                        <strong>HDP Hours:</strong> {instructorHours.hdpHour}
-                      </Typography>
-                      <Typography variant="body2">
-                        <strong>Position Hours:</strong> {instructorHours.positionHour}
-                      </Typography>
-                      <Typography variant="body2">
-                        <strong>Batch Advisor Hours:</strong> {instructorHours.batchAdvisor}
-                      </Typography>
-                      <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold', color: 'primary.main' }}>
-                        <strong>Total Hours:</strong> {instructorHours.hdpHour + instructorHours.positionHour + instructorHours.batchAdvisor}
-                      </Typography>
-                    </>
+                    <Grid container spacing={2}>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          HDP Hours
+                        </Typography>
+                        <Typography variant="body1">
+                          {instructorHours.hdpHour}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          Position Hours
+                        </Typography>
+                        <Typography variant="body1">
+                          {instructorHours.positionHour}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          Batch Advisor Hours
+                        </Typography>
+                        <Typography variant="body1">
+                          {instructorHours.batchAdvisor}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          Total Hours
+                        </Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          {instructorHours.hdpHour + instructorHours.positionHour + instructorHours.batchAdvisor}
+                        </Typography>
+                      </Grid>
+                    </Grid>
                   )}
                 </>
               )}
             </Box>
           </Grid>
 
-          {/* Hours Information - Second Row */}
+          {/* Course Hours */}
           <Grid item xs={12} md={6}>
-            <Typography variant="subtitle1" color="primary" gutterBottom>
-              Course Hours
-            </Typography>
-            <Box sx={{ ml: 2 }}>
-              <Typography variant="body2">
-                <strong>Credit Hours:</strong> {course.Hourfor?.creaditHours || 0}
+            <Box sx={{
+              p: { xs: 1.5, sm: 2 },
+              borderRadius: 2,
+              bgcolor: (theme) => alpha(theme.palette.primary.light, 0.05),
+              height: '100%',
+              overflow: 'hidden'
+            }}>
+              <Typography 
+                variant="subtitle1" 
+                color="primary.main" 
+                gutterBottom 
+                sx={{ 
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  pb: 1,
+                  borderBottom: 1,
+                  borderColor: (theme) => alpha(theme.palette.primary.main, 0.1)
+                }}
+              >
+                <PendingIcon fontSize="small" />
+                Course Hours
               </Typography>
-              <Typography variant="body2">
-                <strong>Lecture Hours:</strong> {course.Hourfor?.lecture || 0}
+              
+              <Grid container spacing={{ xs: 1.5, sm: 2 }} sx={{ mt: { xs: 0.5, sm: 1 } }}>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Credit Hours
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.Hourfor?.creaditHours || 0}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Lecture Hours
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.Hourfor?.lecture || 0}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Lab Hours
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.Hourfor?.lab || 0}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Tutorial Hours
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.Hourfor?.tutorial || 0}
+                  </Typography>
+                </Grid>
+              </Grid>
+
+              <Divider sx={{ my: 2 }} />
+              
+              <Typography 
+                variant="subtitle2" 
+                color="primary.main" 
+                sx={{ 
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  mb: 1.5
+                }}
+              >
+                Sections
               </Typography>
-              <Typography variant="body2">
-                <strong>Lab Hours:</strong> {course.Hourfor?.lab || 0}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Tutorial Hours:</strong> {course.Hourfor?.tutorial || 0}
-              </Typography>
-              <Divider sx={{ my: 1 }} />
-              <Typography variant="body2">
-                <strong>Lecture Sections:</strong> {course.Number_of_Sections?.lecture || 0}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Lab Sections:</strong> {course.Number_of_Sections?.lab || 0}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Tutorial Sections:</strong> {course.Number_of_Sections?.tutorial || 0}
-              </Typography>
+              
+              <Grid container spacing={2}>
+                <Grid item xs={4}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Lecture
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.Number_of_Sections?.lecture || 0}
+                  </Typography>
+                </Grid>
+                <Grid item xs={4}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Lab
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.Number_of_Sections?.lab || 0}
+                  </Typography>
+                </Grid>
+                <Grid item xs={4}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Tutorial
+                  </Typography>
+                  <Typography variant="body1">
+                    {course.Number_of_Sections?.tutorial || 0}
+                  </Typography>
+                </Grid>
+              </Grid>
             </Box>
           </Grid>
 
-          {/* Rejection Information - Last Row */}
-          {canRequestApproval && course.status === 'rejected' && (
+          {/* Rejection Information - Only shown for rejected courses */}
+          {isRejected && (
             <Grid item xs={12}>
-              <Divider sx={{ my: 3 }} />
               <Box 
                 sx={{ 
-                  p: 2, 
-                  borderRadius: 1,
-                  background: (theme) => alpha(theme.palette.warning.light, 0.15),
+                  p: { xs: 2, sm: 3 }, 
+                  mt: 2,
+                  borderRadius: 2,
+                  bgcolor: (theme) => alpha(theme.palette.error.light, 0.08),
                   border: '1px solid',
-                  borderColor: 'warning.main',
+                  borderColor: (theme) => alpha(theme.palette.error.main, 0.2),
                   position: 'relative',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    left: 16,
-                    width: 4,
-                    height: '100%',
-                    bgcolor: 'warning.main',
-                    borderRadius: 1
-                  }
+                  overflow: 'hidden'
                 }}
               >
-                <Box sx={{ ml: 2 }}>
-                  <Typography variant="subtitle1" color="warning.dark" gutterBottom sx={{ fontWeight: 600 }}>
-                    Course Available for Request
-                  </Typography>
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} md={6}>
-                      {course.rejectedInstructor && (
-                        <>
-                          <Typography variant="body2" color="warning.dark">
-                            <strong>Previously Requested By:</strong> {course.rejectedInstructor.name}
-                          </Typography>
-                          <Typography variant="body2" color="warning.dark">
-                            <strong>Department:</strong> {course.rejectedInstructor.department}
-                          </Typography>
-                        </>
-                      )}
-                      <Typography variant="body2" color="warning.dark">
-                        <strong>Rejected On:</strong> {formatDate(course.rejectedBy?.date || course.rejectionDate)}
-                      </Typography>
-                      <Typography variant="body2" color="warning.dark">
-                        <strong>Reviewed By:</strong> {getRejectorRole(course.rejectedBy)}
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      {course.rejectionReason && (
-                        <>
-                          <Typography variant="body2" color="warning.dark">
-                            <strong>Previous Request Rejected Because:</strong>
-                          </Typography>
-                          <Typography 
-                            variant="body2" 
-                            color="warning.dark"
-                            sx={{ 
-                              mt: 0.5,
-                              pl: 2,
-                              borderLeft: '2px solid',
-                              borderColor: 'warning.main'
-                            }}
-                          >
-                            {course.rejectionReason}
-                          </Typography>
-                        </>
-                      )}
-                    </Grid>
+                <Typography 
+                  variant="subtitle1" 
+                  color="error.main" 
+                  gutterBottom 
+                  sx={{ 
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    pb: 1,
+                    borderBottom: 1,
+                    borderColor: (theme) => alpha(theme.palette.error.main, 0.2)
+                  }}
+                >
+                  <CancelIcon fontSize="small" />
+                  Rejection Details
+                </Typography>
+                
+                <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Rejected By
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {rejectorRole}
+                    </Typography>
                   </Grid>
-                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={() => onSelfAssign(course)}
-                      startIcon={<AssignmentIndIcon />}
-                    >
-                      Request This Course
-                    </Button>
-                  </Box>
-                </Box>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Rejection Date & Time
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {rejectionDate}{rejectionTime ? ` at ${rejectionTime}` : ''}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Reason for Rejection
+                    </Typography>
+                    <Paper elevation={0} sx={{ 
+                      p: { xs: 2, md: 3 }, 
+                      bgcolor: (theme) => alpha(theme.palette.background.paper, 0.7),
+                      border: '1px solid',
+                      borderColor: (theme) => alpha(theme.palette.grey[300], 0.8),
+                      borderRadius: 1,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                    }}>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        flexDirection: 'column',
+                        gap: 1.5 
+                      }}>
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'flex-start',
+                          gap: 1.5 
+                        }}>
+                          <Box sx={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            bgcolor: 'error.main',
+                            color: 'white',
+                            flexShrink: 0,
+                            mt: 0.25
+                          }}>
+                            <Typography variant="caption" sx={{ fontWeight: 'bold' }}>!</Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" color="error.main" gutterBottom sx={{ fontWeight: 600 }}>
+                              Course Assignment Request Declined
+                            </Typography>
+                            <Typography variant="body2" sx={{ 
+                              color: 'text.primary',
+                              lineHeight: 1.6,
+                              fontFamily: '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                              letterSpacing: 0.1
+                            }}>
+                              {rejectionReason}
+                            </Typography>
+                          </Box>
+                        </Box>
+                        <Divider sx={{ my: 1 }} />
+                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', pl: 5 }}>
+                          If you have any questions regarding this decision, please contact the department head or academic affairs office.
+                        </Typography>
+                      </Box>
+                    </Paper>
+                  </Grid>
+                </Grid>
               </Box>
             </Grid>
           )}
         </Grid>
-      </AccordionDetails>
-    </Accordion>
-  );
-};
-
-const SchoolCard = ({ school, courses, onSchoolClick, isSelected }) => {
-  const courseCount = courses.filter(course => course.school === school).length;
-  
-  return (
-    <Card 
-      sx={{ 
-        cursor: 'pointer',
-        transform: isSelected ? 'scale(1.02)' : 'none',
-        boxShadow: isSelected ? 6 : 1,
-        transition: 'all 0.2s ease-in-out'
-      }}
-      onClick={() => onSchoolClick(school)}
-    >
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
-          {school}
-        </Typography>
-        <Typography color="text.secondary">
-          {courseCount} {courseCount === 1 ? 'Course' : 'Courses'}
-        </Typography>
-      </CardContent>
-    </Card>
+      </Box>
+    </Paper>
+    
+    {/* Rejection indicator below the card */}
+    {isRejected && (
+      <Paper
+        elevation={1}
+        sx={{
+          mt: -1,
+          mb: 2,
+          ml: 'auto',
+          mr: 2,
+          width: 'fit-content',
+          borderRadius: '0 0 12px 12px',
+          overflow: 'hidden',
+          backgroundColor: 'error.main',
+          color: 'white',
+          padding: '6px 16px',
+          fontSize: '0.75rem',
+          fontWeight: 'bold',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          zIndex: 1,
+          position: 'relative',
+          transform: 'translateY(-1px)'
+        }}
+      >
+        <Box
+          sx={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: 'white',
+            animation: 'pulse 1.5s infinite',
+            '@keyframes pulse': {
+              '0%': {
+                boxShadow: '0 0 0 0 rgba(255, 255, 255, 0.7)'
+              },
+              '70%': {
+                boxShadow: '0 0 0 5px rgba(255, 255, 255, 0)'
+              },
+              '100%': {
+                boxShadow: '0 0 0 0 rgba(255, 255, 255, 0)'
+              }
+            }
+          }}
+        />
+        Rejected by {rejectorRole} • {rejectionDate}
+      </Paper>
+    )}
+  </Box>
   );
 };
 
@@ -466,10 +875,9 @@ const Courses = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(5);
   
-  // Additional filter states
+  // Filter states - removed semester and class year filters
   const [filterDepartment, setFilterDepartment] = useState('');
-  const [filterSemester, setFilterSemester] = useState('');
-  const [filterClassYear, setFilterClassYear] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
   const [openFilterDialog, setOpenFilterDialog] = useState(false);
 
   const [resubmitCourse, setResubmitCourse] = useState(null);
@@ -486,6 +894,7 @@ const Courses = () => {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [courseToReject, setCourseToReject] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectConfirmed, setRejectConfirmed] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
 
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
@@ -502,15 +911,30 @@ const Courses = () => {
       const result = await dispatch(getInstructors());
       
       if (Array.isArray(result)) {
-        const availableInstructors = result.filter(instructor => 
-          instructor.department === user.department && 
-          instructor.school === user.school
-        );
-        setInstructors(availableInstructors);
+        let availableInstructors;
         
-        if (availableInstructors.length === 0) {
-          toast.warning(`No instructors available in ${user.department} department of ${user.school}`);
+        // For department heads, show all instructors in their school
+        if (user?.role === 'department-head') {
+          availableInstructors = result.filter(instructor => 
+            instructor.school === user.school
+          );
+          
+          if (availableInstructors.length === 0) {
+            toast.warning(`No instructors available in ${user.school} school`);
+          }
+        } else {
+          // For other roles, keep the original department filtering
+          availableInstructors = result.filter(instructor => 
+            instructor.department === user.department && 
+            instructor.school === user.school
+          );
+          
+          if (availableInstructors.length === 0) {
+            toast.warning(`No instructors available in ${user.department} department of ${user.school}`);
+          }
         }
+        
+        setInstructors(availableInstructors);
       } else {
         console.error('Invalid instructors data:', result);
         toast.error('Failed to load instructors: Invalid data format');
@@ -545,9 +969,9 @@ const Courses = () => {
       filtered = filtered.filter(course => course.school === user.school);
     }
 
-    // For department heads, show only courses from their department
-    if (user?.role === 'department-head' && user?.department) {
-      filtered = filtered.filter(course => course.department === user.department);
+    // For department heads, show all courses from their school
+    if (user?.role === 'department-head' && user?.school) {
+      filtered = filtered.filter(course => course.school === user.school);
     }
 
     // Apply search filter
@@ -556,23 +980,51 @@ const Courses = () => {
       filtered = filtered.filter(course =>
         course.title?.toLowerCase().includes(searchTerm) ||
         course.code?.toLowerCase().includes(searchTerm) ||
-        course.department?.toLowerCase().includes(searchTerm)
+        course.department?.toLowerCase().includes(searchTerm) ||
+        course.instructor?.name?.toLowerCase().includes(searchTerm)
       );
     }
 
-    // Apply other filters
+    // Apply department filter
     if (filterDepartment) {
       filtered = filtered.filter(course => course.department === filterDepartment);
     }
-    if (filterSemester) {
-      filtered = filtered.filter(course => course.semester === filterSemester);
-    }
-    if (filterClassYear) {
-      filtered = filtered.filter(course => course.classYear === filterClassYear);
+    
+    // Apply status filter - enhanced with more clear status categories
+    if (filterStatus) {
+      if (filterStatus === 'pending') {
+        filtered = filtered.filter(course => 
+          course.status === 'pending' || 
+          course.status === 'dean-review' ||
+          course.status === 'department-head-review'
+        );
+      } else if (filterStatus === 'approved') {
+        filtered = filtered.filter(course => 
+          course.status === 'department-head-approved' || 
+          course.status === 'dean-approved' || 
+          course.status === 'approved' ||
+          course.status === 'vice-director-approved' || 
+          course.status === 'scientific-director-approved' || 
+          course.status === 'finance-approved'
+        );
+      } else if (filterStatus === 'rejected') {
+        filtered = filtered.filter(course => 
+          course.status === 'department-head-rejected' || 
+          course.status === 'dean-rejected' || 
+          course.status === 'rejected' ||
+          course.status === 'vice-director-rejected' || 
+          course.status === 'scientific-director-rejected' || 
+          course.status === 'finance-rejected'
+        );
+      } else if (filterStatus === 'unassigned') {
+        filtered = filtered.filter(course => 
+          !course.instructor && !course.requestedBy
+        );
+      }
     }
 
     setFilteredCourses(filtered);
-  }, [courses, filterValue, filterDepartment, filterSemester, filterClassYear, user?.role, user?.school, user?.department]);
+  }, [courses, filterValue, filterDepartment, filterStatus, user?.role, user?.school, user?.department]);
 
   const schools = [
     'College of Business and Economics',
@@ -611,24 +1063,41 @@ const Courses = () => {
 
     if (user?.role === 'department-head') {
       const categorizedCoursesForDepartmentHead = {
-        allSchoolCourses: courses.filter(course => course.school === user.school),
-        departmentCourses: courses.filter(course => course.department === user.department),
-        pendingApprovals: courses.filter(course => course.status === 'pending'),
-        assignedCourses: courses.filter(course => course.instructor)
+        pendingApprovals: filteredCourses.filter(course => 
+          course.department === user.department && 
+          course.status === 'pending'
+        ),
+        unassignedCourses: filteredCourses.filter(course => 
+          course.school === user.school && 
+          !course.instructor && 
+          course.status !== 'pending'
+        ),
+        departmentCourses: filteredCourses.filter(course => 
+          course.department === user.department
+        ),
+        allSchoolCourses: filteredCourses.filter(course => 
+          course.school === user.school
+        ),
+        assignedCourses: filteredCourses.filter(course => 
+          course.school === user.school && 
+          course.instructor
+        )
       };
 
-      switch (selectedTab) {
-        case 0: // All School Courses
-          return categorizedCoursesForDepartmentHead.allSchoolCourses?.slice(startIndex, endIndex) || [];
-        case 1: // Department Courses
-          return categorizedCoursesForDepartmentHead.departmentCourses?.slice(startIndex, endIndex) || [];
-        case 2: // Pending Approvals
-          return categorizedCoursesForDepartmentHead.pendingApprovals?.slice(startIndex, endIndex) || [];
-        case 3: // Assigned Courses
-          return categorizedCoursesForDepartmentHead.assignedCourses?.slice(startIndex, endIndex) || [];
-        default:
-          return [];
+      // Get the visible tabs based on data availability
+      const visibleTabs = [];
+      if (categorizedCoursesForDepartmentHead.pendingApprovals?.length > 0) {
+        visibleTabs.push('pendingApprovals');
       }
+      if (categorizedCoursesForDepartmentHead.unassignedCourses?.length > 0) {
+        visibleTabs.push('unassignedCourses');
+      }
+      visibleTabs.push('departmentCourses', 'allSchoolCourses', 'assignedCourses');
+      
+      // Get the category to show based on the selected tab
+      const categoryToShow = visibleTabs[selectedTab] || visibleTabs[0];
+      
+      return categorizedCoursesForDepartmentHead[categoryToShow]?.slice(startIndex, endIndex) || [];
     } else if (user?.role === 'instructor') {
       const categorizedCourses = {
         allCourses: filteredCourses,
@@ -637,7 +1106,7 @@ const Courses = () => {
         ),
         available: filteredCourses.filter(course => 
           !course.instructor && 
-          course.department === user.department &&
+          course.school === user.school &&
           course.status !== 'pending'
         ),
         rejected: filteredCourses.filter(course => 
@@ -673,19 +1142,41 @@ const Courses = () => {
   const getTotalCount = () => {
     if (user?.role === 'department-head') {
       const categorizedCoursesForDepartmentHead = {
-        allSchoolCourses: courses.filter(course => course.school === user.school),
-        departmentCourses: courses.filter(course => course.department === user.department),
-        pendingApprovals: courses.filter(course => course.status === 'pending'),
-        assignedCourses: courses.filter(course => course.instructor)
+        pendingApprovals: filteredCourses.filter(course => 
+          course.department === user.department && 
+          course.status === 'pending'
+        ),
+        unassignedCourses: filteredCourses.filter(course => 
+          course.school === user.school && 
+          !course.instructor && 
+          course.status !== 'pending'
+        ),
+        departmentCourses: filteredCourses.filter(course => 
+          course.department === user.department
+        ),
+        allSchoolCourses: filteredCourses.filter(course => 
+          course.school === user.school
+        ),
+        assignedCourses: filteredCourses.filter(course => 
+          course.school === user.school && 
+          course.instructor
+        )
       };
 
-      switch (selectedTab) {
-        case 0: return categorizedCoursesForDepartmentHead.allSchoolCourses?.length || 0;
-        case 1: return categorizedCoursesForDepartmentHead.departmentCourses?.length || 0;
-        case 2: return categorizedCoursesForDepartmentHead.pendingApprovals?.length || 0;
-        case 3: return categorizedCoursesForDepartmentHead.assignedCourses?.length || 0;
-        default: return 0;
+      // Get the visible tabs based on data availability
+      const visibleTabs = [];
+      if (categorizedCoursesForDepartmentHead.pendingApprovals?.length > 0) {
+        visibleTabs.push('pendingApprovals');
       }
+      if (categorizedCoursesForDepartmentHead.unassignedCourses?.length > 0) {
+        visibleTabs.push('unassignedCourses');
+      }
+      visibleTabs.push('departmentCourses', 'allSchoolCourses', 'assignedCourses');
+      
+      // Get the category to show based on the selected tab
+      const categoryToShow = visibleTabs[selectedTab] || visibleTabs[0];
+      
+      return categorizedCoursesForDepartmentHead[categoryToShow]?.length || 0;
     } else if (user?.role === 'instructor') {
       const categorizedCourses = {
         allCourses: filteredCourses,
@@ -694,7 +1185,7 @@ const Courses = () => {
         ),
         available: filteredCourses.filter(course => 
           !course.instructor && 
-          course.department === user.department &&
+          course.school === user.school &&
           course.status !== 'pending'
         ),
         rejected: filteredCourses.filter(course => 
@@ -727,9 +1218,9 @@ const Courses = () => {
   };
 
   const handleFilterReset = () => {
+    setFilterValue('');
     setFilterDepartment('');
-    setFilterSemester('');
-    setFilterClassYear('');
+    setFilterStatus('');
   };
 
   const formik = useFormik({
@@ -739,6 +1230,7 @@ const Courses = () => {
       school: selectedCourse?.school || '',
       department: selectedCourse?.department || '',
       classYear: selectedCourse?.classYear || '',
+      // Removed semester from initial values
       semester: selectedCourse?.semester || '',
       Hourfor: {
         creaditHours: selectedCourse?.Hourfor?.creaditHours || '',
@@ -870,11 +1362,69 @@ const Courses = () => {
         throw new Error(errorMessage);
       }
 
-      // Refresh courses after successful self-assignment
-      dispatch(fetchCourses());
-      toast.success('Course selection request submitted for approval', { 
-        variant: 'success',
-        autoHideDuration: 3000
+      // Update the course in the local state without refreshing
+      // Find the course in the current filtered list
+      const courseIndex = filteredCourses.findIndex(c => c._id === course._id);
+      if (courseIndex !== -1) {
+        // Create a new array with the updated course
+        const newFilteredCourses = [...filteredCourses];
+        newFilteredCourses[courseIndex] = {
+          ...newFilteredCourses[courseIndex],
+          status: 'pending',
+          requestedBy: { _id: user._id, name: user.name }
+        };
+        
+        // Update the filtered courses state directly
+        setFilteredCourses(newFilteredCourses);
+        
+        // Also update the original courses array in Redux
+        const updatedCourses = courses.map(c => {
+          if (c._id === course._id) {
+            return {
+              ...c,
+              status: 'pending',
+              requestedBy: { _id: user._id, name: user.name }
+            };
+          }
+          return c;
+        });
+        
+        // Use the correct reducer action to update the Redux store
+        dispatch({
+          type: 'course/updateCourse',
+          payload: {
+            ...course,
+            status: 'pending',
+            requestedBy: { _id: user._id, name: user.name }
+          }
+        });
+      }
+      
+      // Use a simpler approach with Material-UI's built-in notification system
+      // Display a success message using the existing toast system
+      toast.success('Course Assignment Request success! Please wait until the Department Head approves your request.', {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        className: 'course-assignment-toast',
+        style: {
+          backgroundColor: '#4caf50',
+          color: 'white',
+          fontWeight: 500,
+          borderRadius: '8px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+          padding: '16px',
+          fontSize: '16px',
+          zIndex: 9999,
+          marginTop: '80px', // Ensure it appears below the header
+          marginBottom: '20px',
+          width: 'auto',
+          maxWidth: '90vw',
+          minWidth: '280px'
+        }
       });
     } catch (error) {
       console.error('Error assigning course:', error);
@@ -941,7 +1491,7 @@ const Courses = () => {
   };
 
   const handleRejectConfirm = async () => {
-    if (!courseToReject || !rejectionReason.trim()) return;
+    if (!courseToReject || !rejectionReason.trim() || !rejectConfirmed) return;
 
     try {
       setIsRejecting(true);
@@ -967,6 +1517,7 @@ const Courses = () => {
       setRejectDialogOpen(false);
       setCourseToReject(null);
       setRejectionReason('');
+      setRejectConfirmed(false);
       dispatch(fetchCourses()); // Refresh the courses list
     } catch (error) {
       console.error('Error rejecting course:', error);
@@ -1054,20 +1605,36 @@ const Courses = () => {
   const isInstructor = user?.role === 'instructor';
 
   const categorizedCoursesForDepartmentHead = useMemo(() => {
-    if (!courses || !user) return {};
+    if (!filteredCourses || !user) return {};
 
-    const schoolCourses = courses.filter(course => course.school === user.school);
-    const departmentCourses = schoolCourses.filter(course => course.department === user.department);
-    const pendingApprovals = departmentCourses.filter(course => course.status === 'pending');
-    const assignedCourses = departmentCourses.filter(course => course.instructor);
+    const pendingApprovals = filteredCourses.filter(course => 
+      course.department === user.department && 
+      course.status === 'pending'
+    );
+    const unassignedCourses = filteredCourses.filter(course => 
+      course.school === user.school && 
+      !course.instructor && 
+      course.status !== 'pending'
+    );
+    const departmentCourses = filteredCourses.filter(course => 
+      course.department === user.department
+    );
+    const allSchoolCourses = filteredCourses.filter(course => 
+      course.school === user.school
+    );
+    const assignedCourses = filteredCourses.filter(course => 
+      course.school === user.school && 
+      course.instructor
+    );
 
     return {
-      allSchoolCourses: schoolCourses,
-      departmentCourses,
       pendingApprovals,
+      unassignedCourses,
+      departmentCourses,
+      allSchoolCourses,
       assignedCourses
     };
-  }, [courses, user]);
+  }, [filteredCourses, user]);
 
   const categorizedCourses = useMemo(() => {
 
@@ -1089,7 +1656,7 @@ const Courses = () => {
       ),
       available: filteredCourses.filter(course => 
         !course.instructor && 
-        course.department === user.department &&
+        course.school === user.school &&
         course.status !== 'pending'
       ),
       rejected: filteredCourses.filter(course => 
@@ -1115,6 +1682,23 @@ const Courses = () => {
     setSelectedTab(newValue);
     setPage(0); // Reset page when changing tabs
   };
+
+  useEffect(() => {
+    if (user?.role === 'department-head') {
+      const hasPendingApprovals = categorizedCoursesForDepartmentHead.pendingApprovals?.length > 0;
+      const hasUnassignedCourses = categorizedCoursesForDepartmentHead.unassignedCourses?.length > 0;
+      
+      // Count visible tabs before the current selected tab
+      let visibleTabCount = 0;
+      if (hasPendingApprovals) visibleTabCount++;
+      if (hasUnassignedCourses) visibleTabCount++;
+      
+      // If selected tab is higher than available tabs, reset to first tab
+      if (selectedTab >= visibleTabCount + 3) { // +3 for the always visible tabs
+        setSelectedTab(0);
+      }
+    }
+  }, [categorizedCoursesForDepartmentHead, user?.role, selectedTab]);
 
   const ApproveCourseDialog = () => (
     <Dialog open={approveDialogOpen} onClose={() => setApproveDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -1190,7 +1774,7 @@ const Courses = () => {
   );
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+    <Container maxWidth={false} sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3, md: 4 } }}>
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h4" component="h1">
           Courses Management
@@ -1219,96 +1803,253 @@ const Courses = () => {
         )}
       </Box>
 
-      {/* Search and Filter Bar */}
-      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
-        <TextField
-          size="small"
-          placeholder="Search courses..."
-          value={filterValue}
-          onChange={handleSearchChange}
-          sx={{ flexGrow: 1 }}
-          InputProps={{
-            startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />
-          }}
-        />
-        <Button
-          variant="outlined"
-          startIcon={<FilterListIcon />}
-          onClick={() => setOpenFilterDialog(true)}
-        >
-          Filters
-        </Button>
-      </Box>
-
-      {/* Filter Dialog */}
-      <Dialog open={openFilterDialog} onClose={() => setOpenFilterDialog(false)}>
-        <DialogTitle>Filter Courses</DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Department</InputLabel>
-              <Select
-                value={filterDepartment}
-                onChange={(e) => setFilterDepartment(e.target.value)}
-                label="Department"
-              >
-                <MenuItem value="">All Departments</MenuItem>
-                {departments[user.school] && departments[user.school].map((dept) => (
-                  <MenuItem key={dept} value={dept}>{dept}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl fullWidth>
-              <InputLabel>Semester</InputLabel>
-              <Select
-                value={filterSemester}
-                onChange={(e) => setFilterSemester(e.target.value)}
-                label="Semester"
-              >
-                <MenuItem value="">All Semesters</MenuItem>
-                {semesters.map((sem) => (
-                  <MenuItem key={sem} value={sem}>{sem} Semester</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl fullWidth>
-              <InputLabel>Class Year</InputLabel>
-              <Select
-                value={filterClassYear}
-                onChange={(e) => setFilterClassYear(e.target.value)}
-                label="Class Year"
-              >
-                <MenuItem value="">All Years</MenuItem>
-                {classYears.map((year) => (
-                  <MenuItem key={year} value={year}>{year} Year</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleFilterReset}>Reset</Button>
-          <Button onClick={() => setOpenFilterDialog(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Schools Grid */}
-      {!selectedSchool && (
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {schools.map((school) => (
-            <Grid item xs={12} sm={6} md={3} key={school}>
-              <SchoolCard
-                school={school}
-                courses={courses || []}
-                onSchoolClick={setSelectedSchool}
-                isSelected={selectedSchool === school}
-              />
+      {/* Instructor Dashboard at the top */}
+      {user?.role === 'instructor' && (
+        <Box sx={{ mb: 4 }}>
+          {/* Instructor Stats Summary */}
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="h6" sx={{ 
+              fontWeight: 600, 
+              color: 'primary.main', 
+              mb: 2,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1
+            }}>
+              <SchoolIcon fontSize="small" />
+              Course Control Panel
+            </Typography>
+            
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper
+                  elevation={2}
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    bgcolor: theme => alpha(theme.palette.success.main, 0.08),
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    transition: 'transform 0.2s, box-shadow 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: theme => `0 8px 24px ${alpha(theme.palette.success.main, 0.2)}`
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <AssignmentTurnedInIcon sx={{ fontSize: 24, color: 'success.main', mr: 1 }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>My Courses</Typography>
+                  </Box>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: 'success.main' }}>
+                    {categorizedCourses.myAssigned?.length || 0}
+                  </Typography>
+                </Paper>
+              </Grid>
+              
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper
+                  elevation={2}
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    bgcolor: theme => alpha(theme.palette.info.main, 0.08),
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    transition: 'transform 0.2s, box-shadow 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: theme => `0 8px 24px ${alpha(theme.palette.info.main, 0.2)}`
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <AddCircleOutlineIcon sx={{ fontSize: 24, color: 'info.main', mr: 1 }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Available</Typography>
+                  </Box>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: 'info.main' }}>
+                    {categorizedCourses.available?.length || 0}
+                  </Typography>
+                </Paper>
+              </Grid>
+              
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper
+                  elevation={2}
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    bgcolor: theme => alpha(theme.palette.warning.main, 0.08),
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    transition: 'transform 0.2s, box-shadow 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: theme => `0 8px 24px ${alpha(theme.palette.warning.main, 0.2)}`
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <HourglassEmptyIcon sx={{ fontSize: 24, color: 'warning.main', mr: 1 }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Pending</Typography>
+                  </Box>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: 'warning.main' }}>
+                    {categorizedCourses.pending?.length || 0}
+                  </Typography>
+                </Paper>
+              </Grid>
+              
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper
+                  elevation={2}
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    bgcolor: theme => alpha(theme.palette.error.main, 0.08),
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    transition: 'transform 0.2s, box-shadow 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: theme => `0 8px 24px ${alpha(theme.palette.error.main, 0.2)}`
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <CancelIcon sx={{ fontSize: 24, color: 'error.main', mr: 1 }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Rejected</Typography>
+                  </Box>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: 'error.main' }}>
+                    {categorizedCourses.rejected?.length || 0}
+                  </Typography>
+                </Paper>
+              </Grid>
             </Grid>
-          ))}
-        </Grid>
+          </Box>
+        </Box>
       )}
+
+      {/* Search and Filter Bar removed for Department Head */}
+      {!isDepartmentHead && (
+        <>
+          <Paper elevation={2} sx={{ mb: 3, p: 3, borderRadius: 2, bgcolor: theme => alpha(theme.palette.background.paper, 0.95), backdropFilter: 'blur(20px)', boxShadow: theme => `0 4px 20px ${alpha(theme.palette.primary.main, 0.1)}` }}>
+            <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600, color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FilterListIcon fontSize="small" />
+              Search & Filter
+            </Typography>
+            
+            <Grid container spacing={2} alignItems="center">
+              {/* Search field - takes more space */}
+              <Grid item xs={12} md={6} lg={5}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Search by course title, code, department or instructor..."
+                  value={filterValue}
+                  onChange={handleSearchChange}
+                  InputProps={{
+                    startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />
+                  }}
+                  variant="outlined"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 1.5,
+                      '&:hover fieldset': {
+                        borderColor: 'primary.main',
+                      }
+                    }
+                  }}
+                />
+              </Grid>
+              
+              {/* Department filter - inline */}
+              <Grid item xs={12} sm={6} md={3} lg={2.5}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Department</InputLabel>
+                  <Select
+                    value={filterDepartment}
+                    onChange={(e) => setFilterDepartment(e.target.value)}
+                    label="Department"
+                    sx={{ borderRadius: 1.5 }}
+                  >
+                    <MenuItem value="">All Departments</MenuItem>
+                    {departments[user.school] && departments[user.school].map((dept) => (
+                      <MenuItem key={dept} value={dept}>{dept}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              {/* Status filter - inline */}
+              <Grid item xs={12} sm={6} md={3} lg={2.5}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    label="Status"
+                    sx={{ borderRadius: 1.5 }}
+                  >
+                    <MenuItem value="">All Statuses</MenuItem>
+                    <MenuItem value="pending">
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: 'warning.main' }} />
+                        <Typography>Pending</Typography>
+                      </Box>
+                    </MenuItem>
+                    <MenuItem value="approved">
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: 'success.main' }} />
+                        <Typography>Approved</Typography>
+                      </Box>
+                    </MenuItem>
+                    <MenuItem value="rejected">
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: 'error.main' }} />
+                        <Typography>Rejected</Typography>
+                      </Box>
+                    </MenuItem>
+                    <MenuItem value="unassigned">
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: 'info.main' }} />
+                        <Typography>Unassigned</Typography>
+                      </Box>
+                    </MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              {/* Reset button */}
+              <Grid item xs={12} sm={12} md={12} lg={2} sx={{ display: 'flex', justifyContent: { xs: 'flex-start', lg: 'flex-end' } }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    setFilterValue('');
+                    setFilterDepartment('');
+                    setFilterStatus('');
+                  }}
+                  color="secondary"
+                  startIcon={<RefreshIcon />}
+                  sx={{ height: 40, borderRadius: 1.5 }}
+                >
+                  Reset Filters
+                </Button>
+              </Grid>
+            </Grid>
+          </Paper>
+
+          {/* Filter Dialog - Now removed since we have inline filters */}
+        </>
+      )}
+
 
       {/* Selected School Header */}
       {selectedSchool && (
@@ -1326,74 +2067,534 @@ const Courses = () => {
         </Box>
       )}
 
-      {/* Department Head Tabs */}
+      {/* Department Head Filter */}
       {isDepartmentHead && (
-        <Box sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs 
-            value={selectedTab} 
-            onChange={handleTabChange}
-            variant="scrollable"
-            scrollButtons="auto"
+        <>
+          {/* Header Section with Stats */}
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h4" sx={{ mb: 3, fontWeight: 700, color: 'primary.main' }}>
+              Course Management Dashboard
+            </Typography>
+            
+            <Grid container spacing={{ xs: 2, md: 3 }}>
+              {loading ? (
+                // Skeleton loading for statistics cards
+                <>
+                  {[...Array(4)].map((_, index) => (
+                    <Grid item xs={12} sm={6} md={3} key={index}>
+                      <Paper
+                        elevation={2}
+                        sx={{
+                          p: 3,
+                          borderRadius: 3,
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                          <Skeleton variant="circular" width={28} height={28} sx={{ mr: 1 }} />
+                          <Skeleton variant="text" width={150} height={32} />
+                        </Box>
+                        <Skeleton variant="text" width="40%" height={60} />
+                      </Paper>
+                    </Grid>
+                  ))}
+                </>
+              ) : (
+                // Actual statistics cards
+                <>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper
+                      elevation={2}
+                      sx={{
+                        p: 3,
+                        borderRadius: 3,
+                        bgcolor: theme => alpha(theme.palette.warning.main, 0.1),
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        transition: 'transform 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-5px)',
+                          boxShadow: theme => `0 8px 24px ${alpha(theme.palette.warning.main, 0.2)}`
+                        }
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <PendingIcon sx={{ fontSize: 28, color: 'warning.main', mr: 1 }} />
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>Pending Approvals</Typography>
+                      </Box>
+                      <Typography variant="h3" sx={{ fontWeight: 700, color: 'warning.main' }}>
+                        {categorizedCoursesForDepartmentHead.pendingApprovals?.length || 0}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper
+                      elevation={2}
+                      sx={{
+                        p: 3,
+                        borderRadius: 3,
+                        bgcolor: theme => alpha(theme.palette.info.main, 0.1),
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        transition: 'transform 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-5px)',
+                          boxShadow: theme => `0 8px 24px ${alpha(theme.palette.info.main, 0.2)}`
+                        }
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <AssignmentIndIcon sx={{ fontSize: 28, color: 'info.main', mr: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>Unassigned Courses</Typography>
+                      </Box>
+                      <Typography variant="h3" sx={{ fontWeight: 700, color: 'info.main' }}>
+                        {categorizedCoursesForDepartmentHead.unassignedCourses?.length || 0}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper
+                      elevation={2}
+                      sx={{
+                        p: 3,
+                        borderRadius: 3,
+                        bgcolor: theme => alpha(theme.palette.info.main, 0.1),
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        transition: 'transform 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-5px)',
+                          boxShadow: theme => `0 8px 24px ${alpha(theme.palette.info.main, 0.2)}`
+                        }
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <BusinessIcon sx={{ fontSize: 28, color: 'info.main', mr: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>Department Courses</Typography>
+                      </Box>
+                      <Typography variant="h3" sx={{ fontWeight: 700, color: 'info.main' }}>
+                        {categorizedCoursesForDepartmentHead.departmentCourses?.length || 0}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper
+                      elevation={2}
+                      sx={{
+                        p: 3,
+                        borderRadius: 3,
+                        bgcolor: theme => alpha(theme.palette.success.main, 0.1),
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        transition: 'transform 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-5px)',
+                          boxShadow: theme => `0 8px 24px ${alpha(theme.palette.success.main, 0.2)}`
+                        }
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <AssignmentIndIcon sx={{ fontSize: 28, color: 'success.main', mr: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>Assigned Courses</Typography>
+                      </Box>
+                      <Typography variant="h3" sx={{ fontWeight: 700, color: 'success.main' }}>
+                        {categorizedCoursesForDepartmentHead.assignedCourses?.length || 0}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                </>
+              )}
+            </Grid>
+          </Box>
+          
+          {/* Modern Filter Section */}
+          <Paper 
+            elevation={2} 
+            sx={{ 
+              mb: 4, 
+              p: { xs: 2, sm: 3 }, 
+              borderRadius: 3, 
+              bgcolor: theme => alpha(theme.palette.background.paper, 0.9),
+              backdropFilter: 'blur(10px)',
+              boxShadow: theme => `0 4px 20px ${alpha(theme.palette.primary.main, 0.1)}`,
+              transition: 'all 0.3s ease'
+            }}
           >
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCoursesForDepartmentHead.allSchoolCourses?.length || 0} 
-                  color="primary"
-                  max={99}
-                >
-                  <Box sx={{ pr: 1 }}>All School Courses</Box>
-                </Badge>
-              } 
-            />
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCoursesForDepartmentHead.departmentCourses?.length || 0} 
-                  color="primary"
-                  max={99}
-                >
-                  <Box sx={{ pr: 1 }}>Department Courses</Box>
-                </Badge>
-              } 
-            />
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCoursesForDepartmentHead.pendingApprovals?.length || 0} 
-                  color="primary"
-                  max={99}
-                >
-                  <Box sx={{ pr: 1 }}>Pending Approvals</Box>
-                </Badge>
-              } 
-            />
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCoursesForDepartmentHead.assignedCourses?.length || 0} 
-                  color="primary"
-                  max={99}
-                >
-                  <Box sx={{ pr: 1 }}>Assigned Courses</Box>
-                </Badge>
-              } 
-            />
-          </Tabs>
-        </Box>
+            {loading ? (
+              // Skeleton loading for filter section
+              <>
+                <Skeleton variant="text" width={200} height={40} sx={{ mb: 2 }} />
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: { xs: 'column', md: 'row' },
+                  gap: 2, 
+                  alignItems: { xs: 'stretch', md: 'flex-end' },
+                  mb: 2
+                }}>
+                  <Skeleton variant="rectangular" height={40} sx={{ flexGrow: 1, borderRadius: 1 }} />
+                  <Skeleton variant="rectangular" width={200} height={40} sx={{ borderRadius: 1 }} />
+                  <Skeleton variant="rectangular" width={200} height={40} sx={{ borderRadius: 1 }} />
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <Skeleton variant="rectangular" width={120} height={40} sx={{ borderRadius: 1 }} />
+                </Box>
+              </>
+            ) : (
+              // Actual filter section
+              <>
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>
+                  Search & Filter Courses
+                </Typography>
+                
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: { xs: 'column', md: 'row' },
+                  gap: 2, 
+                  alignItems: { xs: 'stretch', md: 'flex-end' },
+                  mb: { xs: 2, md: 0 },
+                  flexWrap: 'wrap'
+                }}>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: { xs: 'column', md: 'row' },
+                    gap: 2,
+                    alignItems: { xs: 'stretch', md: 'flex-end' },
+                    flexGrow: 1,
+                    width: { xs: '100%', md: 'auto' }
+                  }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Search by course title, code, department or instructor..."
+                      value={filterValue}
+                      onChange={handleSearchChange}
+                      sx={{ 
+                        flexGrow: 1,
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 1.5,
+                          '&:hover fieldset': {
+                            borderColor: 'primary.main',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderWidth: 1,
+                          }
+                        },
+                        '& .MuiFormHelperText-root': {
+                          marginLeft: 0,
+                          marginRight: 0,
+                          marginTop: 0.5,
+                          lineHeight: 1.2,
+                          fontSize: '0.7rem'
+                        }
+                      }}
+                      InputProps={{
+                        startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />
+                      }}
+                      variant="outlined"
+                    />
+                    
+                    <FormControl sx={{ minWidth: { xs: '100%', md: 220 } }}>
+                      <InputLabel>Filter by Department</InputLabel>
+                      <Select
+                        size="small"
+                        value={filterDepartment || ''}
+                        onChange={(e) => setFilterDepartment(e.target.value)}
+                        label="Filter by Department"
+                        sx={{ 
+                          borderRadius: 1.5,
+                          '&:hover': {
+                            boxShadow: theme => `0 0 0 2px ${alpha(theme.palette.primary.main, 0.2)}`
+                          }
+                        }}
+                      >
+                        <MenuItem value="">All Departments</MenuItem>
+                        {departments[user.school]?.map(dept => (
+                          <MenuItem key={dept} value={dept}>{dept}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+
+                    <FormControl sx={{ minWidth: { xs: '100%', md: 200 } }}>
+                      <InputLabel>Filter by Status</InputLabel>
+                      <Select
+                        size="small"
+                        value={filterStatus || ''}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        label="Filter by Status"
+                        sx={{ 
+                          borderRadius: 1.5,
+                          '&:hover': {
+                            boxShadow: theme => `0 0 0 2px ${alpha(theme.palette.primary.main, 0.2)}`
+                          }
+                        }}
+                      >
+                        <MenuItem value="">All Statuses</MenuItem>
+                        <MenuItem value="pending">Pending</MenuItem>
+                        <MenuItem value="approved">Approved</MenuItem>
+                        <MenuItem value="rejected">Rejected</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+                  
+                  <Box sx={{ 
+                    display: 'flex', 
+                    justifyContent: { xs: 'flex-end', md: 'center' },
+                    alignItems: 'flex-end',
+                    mt: { xs: 1, md: 0 },
+                    mb: { xs: 1, md: 0 }
+                  }}>
+                    <Tooltip title="Reset all filters">
+                      <Button
+                        variant="outlined"
+                        onClick={() => {
+                          setFilterValue('');
+                          setFilterDepartment('');
+                          setFilterStatus('');
+                        }}
+                        color="secondary"
+                        sx={{ 
+                          borderRadius: 1.5,
+                          px: 3,
+                          height: '40px',
+                          '&:hover': {
+                            boxShadow: theme => `0 0 0 2px ${alpha(theme.palette.secondary.main, 0.2)}`
+                          }
+                        }}
+                        startIcon={<FilterListIcon />}
+                      >
+                        Reset Filters
+                      </Button>
+                    </Tooltip>
+                  </Box>
+                </Box>
+              </>
+            )}
+          </Paper>
+          
+          {/* Modern Tabs Section */}
+          <Paper 
+            elevation={2} 
+            sx={{ 
+              mb: 4, 
+              borderRadius: 3, 
+              overflow: 'hidden',
+              bgcolor: theme => alpha(theme.palette.background.paper, 0.9),
+              boxShadow: theme => `0 4px 20px ${alpha(theme.palette.primary.main, 0.1)}`,
+            }}
+          >
+            {loading ? (
+              // Skeleton loading for tabs and content
+              <>
+                <Box sx={{ 
+                  borderBottom: 1, 
+                  borderColor: 'divider',
+                  bgcolor: theme => alpha(theme.palette.primary.main, 0.05),
+                  p: 1
+                }}>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    {[...Array(4)].map((_, index) => (
+                      <Skeleton key={index} variant="rectangular" width={120} height={48} sx={{ borderRadius: 1 }} />
+                    ))}
+                  </Box>
+                </Box>
+                <Box sx={{ p: 3 }}>
+                  <Grid container spacing={{ xs: 2, md: 3 }}>
+                    {[...Array(6)].map((_, index) => (
+                      <Grid item xs={12} md={6} lg={4} key={index}>
+                        <Paper
+                          elevation={1}
+                          sx={{
+                            p: 2,
+                            borderRadius: 2,
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column'
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                            <Skeleton variant="text" width="60%" height={24} />
+                            <Skeleton variant="rectangular" width={80} height={24} sx={{ borderRadius: 4 }} />
+                          </Box>
+                          <Skeleton variant="text" width="40%" height={20} sx={{ mb: 1 }} />
+                          <Skeleton variant="text" width="30%" height={20} sx={{ mb: 1 }} />
+                          <Skeleton variant="text" width="70%" height={20} sx={{ mb: 1 }} />
+                          <Box sx={{ mt: 'auto', pt: 2, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                            <Skeleton variant="rectangular" width={90} height={36} sx={{ borderRadius: 1 }} />
+                            <Skeleton variant="rectangular" width={90} height={36} sx={{ borderRadius: 1 }} />
+                          </Box>
+                        </Paper>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
+              </>
+            ) : (
+              <>
+                <Box sx={{ 
+                  borderBottom: 1, 
+                  borderColor: 'divider',
+                  bgcolor: theme => alpha(theme.palette.primary.main, 0.05),
+                }}>
+                  <Tabs 
+                    value={selectedTab} 
+                    onChange={handleTabChange}
+                    variant="scrollable"
+                    scrollButtons="auto"
+                    sx={{
+                      '& .MuiTabs-indicator': {
+                        height: 3,
+                        borderRadius: '3px 3px 0 0'
+                      },
+                      '& .MuiTab-root': {
+                        transition: 'all 0.2s',
+                        fontWeight: 500,
+                        '&:hover': {
+                          bgcolor: theme => alpha(theme.palette.primary.main, 0.05),
+                        },
+                        '&.Mui-selected': {
+                          fontWeight: 600
+                        }
+                      }
+                    }}
+                  >
+                {categorizedCoursesForDepartmentHead.pendingApprovals?.length > 0 && (
+                  <Tab 
+                    label={
+                      <Badge 
+                        badgeContent={categorizedCoursesForDepartmentHead.pendingApprovals?.length || 0} 
+                        color="warning"
+                        max={99}
+                        sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
+                      >
+                        <Box sx={{ px: 1, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <PendingIcon sx={{ fontSize: 20 }} />
+                          <span>Pending Approvals</span>
+                        </Box>
+                      </Badge>
+                    } 
+                  />
+                )}
+                
+                {categorizedCoursesForDepartmentHead.unassignedCourses?.length > 0 && (
+                  <Tab 
+                    label={
+                      <Badge 
+                        badgeContent={categorizedCoursesForDepartmentHead.unassignedCourses?.length || 0} 
+                        color="info"
+                        max={99}
+                        sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
+                      >
+                        <Box sx={{ px: 1, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <AssignmentIndIcon sx={{ fontSize: 20 }} />
+                          <span>Unassigned Courses</span>
+                        </Box>
+                      </Badge>
+                    } 
+                  />
+                )}
+                
+                <Tab 
+                  label={
+                    <Badge 
+                      badgeContent={categorizedCoursesForDepartmentHead.departmentCourses?.length || 0} 
+                      color="info"
+                      max={99}
+                      sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
+                    >
+                      <Box sx={{ px: 1, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <BusinessIcon sx={{ fontSize: 20 }} />
+                        <span>Department Courses</span>
+                      </Box>
+                    </Badge>
+                  } 
+                />
+                <Tab 
+                  label={
+                    <Badge 
+                      badgeContent={categorizedCoursesForDepartmentHead.allSchoolCourses?.length || 0} 
+                      color="primary"
+                      max={99}
+                      sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
+                    >
+                      <Box sx={{ px: 1, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <SchoolIcon sx={{ fontSize: 20 }} />
+                        <span>All School Courses</span>
+                      </Box>
+                    </Badge>
+                  } 
+                />
+                <Tab 
+                  label={
+                    <Badge 
+                      badgeContent={categorizedCoursesForDepartmentHead.assignedCourses?.length || 0} 
+                      color="success"
+                      max={99}
+                      sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
+                    >
+                      <Box sx={{ px: 1, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <AssignmentIndIcon sx={{ fontSize: 20 }} />
+                        <span>Assigned Courses</span>
+                      </Box>
+                    </Badge>
+                  } 
+                />
+              </Tabs>
+            </Box>
+              </>
+            )}
+          </Paper>
+        </>
       )}
 
-      {/* Instructor Tabs */}
-      {isInstructor && (
-        <Box sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs 
-            value={selectedTab} 
-            onChange={handleTabChange}
-            variant="scrollable"
-            scrollButtons="auto"
+      {/* Instructor Tabs - Premium Styled */}
+      {user?.role === 'instructor' && (
+        <Box sx={{ mb: 4 }}>
+          {/* Enhanced Tab Navigation */}
+          <Paper 
+            elevation={3} 
+            sx={{ 
+              borderRadius: 3,
+              overflow: 'hidden',
+              bgcolor: theme => alpha(theme.palette.background.paper, 0.95),
+              backdropFilter: 'blur(12px)',
+              boxShadow: theme => `0 8px 32px ${alpha(theme.palette.primary.main, 0.15)}`,
+              transition: 'all 0.3s ease',
+              p: 0.5,
+              position: 'relative',
+              '&:before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '4px',
+                background: 'linear-gradient(90deg, #3f51b5 0%, #2196f3 50%, #00bcd4 100%)',
+                borderRadius: '3px 3px 0 0'
+              }
+            }}
           >
-            <Tab 
-              label={
+          {/* Create a list of visible tabs based on whether they have courses */}
+          {(() => {
+            const visibleTabs = [];
+            
+            // Always show All Courses tab
+            visibleTabs.push({
+              index: 0,
+              label: (
                 <Badge 
                   badgeContent={categorizedCourses.allCourses?.length || 0} 
                   color="info"
@@ -1403,76 +2604,234 @@ const Courses = () => {
                     <Box sx={{ pr: 1 }}>All Courses</Box>
                   </Tooltip>
                 </Badge>
-              } 
-            />
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCourses.myAssigned?.length || 0} 
-                  color="success"
-                  max={99}
-                >
-                  <Box sx={{ pr: 1 }}>My Courses</Box>
-                </Badge>
-              } 
-            />
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCourses.available?.length || 0} 
-                  color="info"
-                  max={99}
-                >
-                  <Tooltip title="Unassigned courses available for self-assignment, including rejected courses from other instructors">
-                    <Box sx={{ pr: 1 }}>Available</Box>
-                  </Tooltip>
-                </Badge>
-              } 
-            />
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCourses.rejected?.length || 0} 
-                  color="error"
-                  max={99}
-                >
-                  <Tooltip title="Courses that were rejected when you requested them">
-                    <Box sx={{ pr: 1 }}>Rejected</Box>
-                  </Tooltip>
-                </Badge>
-              } 
-            />
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCourses.pending?.length || 0} 
-                  color="warning"
-                  max={99}
-                >
-                  <Box sx={{ pr: 1 }}>Pending</Box>
-                </Badge>
-              } 
-            />
-            <Tab 
-              label={
-                <Badge 
-                  badgeContent={categorizedCourses.othersAssigned?.length || 0} 
-                  color="default"
-                  max={99}
-                >
-                  <Box sx={{ pr: 1 }}>Other Instructors</Box>
-                </Badge>
-              } 
-            />
-          </Tabs>
+              )
+            });
+            
+            // Only show My Courses tab if there are assigned courses
+            if (categorizedCourses.myAssigned?.length > 0) {
+              visibleTabs.push({
+                index: 1,
+                label: (
+                  <Badge 
+                    badgeContent={categorizedCourses.myAssigned?.length || 0} 
+                    color="success"
+                    max={99}
+                  >
+                    <Box sx={{ pr: 1 }}>My Courses</Box>
+                  </Badge>
+                )
+              });
+            }
+            
+            // Only show Available tab if there are available courses
+            if (categorizedCourses.available?.length > 0) {
+              visibleTabs.push({
+                index: 2,
+                label: (
+                  <Badge 
+                    badgeContent={categorizedCourses.available?.length || 0} 
+                    color="info"
+                    max={99}
+                  >
+                    <Tooltip title="Unassigned courses available for self-assignment, including rejected courses from other instructors">
+                      <Box sx={{ pr: 1 }}>Available</Box>
+                    </Tooltip>
+                  </Badge>
+                )
+              });
+            }
+            
+            // Only show Rejected tab if there are rejected courses
+            if (categorizedCourses.rejected?.length > 0) {
+              visibleTabs.push({
+                index: 3,
+                label: (
+                  <Badge 
+                    badgeContent={categorizedCourses.rejected?.length || 0} 
+                    color="error"
+                    max={99}
+                  >
+                    <Tooltip title="Courses that were rejected when you requested them">
+                      <Box sx={{ pr: 1 }}>Rejected</Box>
+                    </Tooltip>
+                  </Badge>
+                )
+              });
+            }
+            
+            // Only show Pending tab if there are pending courses
+            if (categorizedCourses.pending?.length > 0) {
+              visibleTabs.push({
+                index: 4,
+                label: (
+                  <Badge 
+                    badgeContent={categorizedCourses.pending?.length || 0} 
+                    color="warning"
+                    max={99}
+                  >
+                    <Box sx={{ pr: 1 }}>Pending</Box>
+                  </Badge>
+                )
+              });
+            }
+            
+            // Only show Other Instructors tab if there are courses assigned to others
+            if (categorizedCourses.othersAssigned?.length > 0) {
+              visibleTabs.push({
+                index: 5,
+                label: (
+                  <Badge 
+                    badgeContent={categorizedCourses.othersAssigned?.length || 0} 
+                    color="default"
+                    max={99}
+                  >
+                    <Box sx={{ pr: 1 }}>Other Instructors</Box>
+                  </Badge>
+                )
+              });
+            }
+            
+            // Map the actual tab index to the visible tab index
+            const tabIndexMap = visibleTabs.reduce((map, tab, i) => {
+              map[tab.index] = i;
+              return map;
+            }, {});
+            
+            // Find the correct visible tab index based on the selected tab
+            const visibleTabIndex = tabIndexMap[selectedTab] !== undefined ? tabIndexMap[selectedTab] : 0;
+            
+            return (
+              <Tabs 
+                value={visibleTabIndex} 
+                onChange={(e, newValue) => {
+                  // Map back to the actual tab index
+                  const actualTabIndex = visibleTabs[newValue].index;
+                  handleTabChange(e, actualTabIndex);
+                }}
+                variant="scrollable"
+                scrollButtons="auto"
+                TabIndicatorProps={{
+                  sx: {
+                    height: 4,
+                    borderRadius: '4px 4px 0 0',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    background: 'linear-gradient(90deg, #3f51b5 0%, #2196f3 100%)'
+                  }
+                }}
+                sx={{
+                  minHeight: 56,
+                  '& .MuiTabs-flexContainer': {
+                    gap: 1
+                  },
+                  '& .MuiTabs-scroller': {
+                    px: 1,
+                    py: 1
+                  },
+                  '& .MuiTab-root': {
+                    minHeight: 48,
+                    fontWeight: 500,
+                    transition: 'all 0.2s',
+                    borderRadius: '8px',
+                    px: 2,
+                    '&:hover': {
+                      color: 'primary.main',
+                      opacity: 1,
+                      backgroundColor: theme => alpha(theme.palette.primary.main, 0.05)
+                    },
+                    '&.Mui-selected': {
+                      color: 'primary.main',
+                      fontWeight: 600,
+                      backgroundColor: theme => alpha(theme.palette.primary.main, 0.1)
+                    }
+                  },
+                  '& .MuiBadge-badge': {
+                    fontWeight: 600,
+                    fontSize: '0.65rem',
+                    minWidth: '20px',
+                    height: '20px',
+                    padding: '0 6px',
+                    borderRadius: '10px',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+                  }
+                }}
+              >
+                {visibleTabs.map((tab, index) => {
+                  // Determine the appropriate icon based on tab index
+                  let TabIcon;
+                  switch(tab.index) {
+                    case 0: TabIcon = ViewListIcon; break;
+                    case 1: TabIcon = AssignmentTurnedInIcon; break;
+                    case 2: TabIcon = AddCircleOutlineIcon; break;
+                    case 3: TabIcon = CancelIcon; break;
+                    case 4: TabIcon = HourglassEmptyIcon; break;
+                    case 5: TabIcon = PeopleAltIcon; break;
+                    default: TabIcon = ViewListIcon;
+                  }
+                  
+                  return (
+                    <Tab 
+                      key={index} 
+                      label={tab.label}
+                      icon={<TabIcon fontSize="small" />}
+                      iconPosition="start"
+                      sx={{
+                        borderRadius: '8px',
+                        minHeight: 48,
+                        py: 1.5,
+                        transition: 'all 0.2s ease',
+                        '&.Mui-selected': {
+                          backgroundColor: theme => alpha(theme.palette.primary.main, 0.08),
+                          transform: 'translateY(-2px)'
+                        },
+                        '&:hover': {
+                          transform: 'translateY(-2px)'
+                        }
+                      }}
+                    />
+                  );
+                })}
+              </Tabs>
+            );
+          })()} 
+          </Paper>
         </Box>
       )}
 
       {/* Course List */}
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-          <CircularProgress />
-        </Box>
+        <Grid container spacing={2}>
+          {[...Array(4)].map((_, index) => (
+            <Grid item xs={12} key={index}>
+              <Paper
+                elevation={2}
+                sx={{
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                  p: { xs: 2, md: 3 },
+                  mb: 0
+                }}
+              >
+                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', mb: 2 }}>
+                  <Box sx={{ width: '100%' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Skeleton variant="text" width={200} height={28} />
+                    </Box>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      <Skeleton variant="text" width={120} height={20} />
+                      <Skeleton variant="text" width={150} height={20} />
+                    </Box>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1, mt: { xs: 2, sm: 0 }, justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
+                    <Skeleton variant="rectangular" width={80} height={36} sx={{ borderRadius: 1 }} />
+                    <Skeleton variant="circular" width={36} height={36} />
+                    <Skeleton variant="circular" width={36} height={36} />
+                  </Box>
+                </Box>
+                <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 1, mt: 2 }} />
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
       ) : (
         <>
           <Grid container spacing={2}>
@@ -1529,14 +2888,73 @@ const Courses = () => {
         </>
       )}
       {/* Course Form Dialog */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
-        <DialogTitle>
-          {selectedCourse ? 'Edit Course' : 'Add Course'}
+      <Dialog 
+        open={openDialog} 
+        onClose={() => setOpenDialog(false)} 
+        maxWidth="md" 
+        fullWidth
+        scroll="paper"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: (theme) => `0 8px 32px ${alpha(theme.palette.primary.main, 0.1)}`,
+            maxHeight: '90vh'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          p: { xs: 2, md: 3 },
+          pb: { xs: 1, md: 2 },
+          bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative'
+        }}>
+          <IconButton
+            aria-label="close"
+            onClick={() => {
+              setOpenDialog(false);
+              formik.resetForm();
+            }}
+            sx={{
+              position: 'absolute',
+              right: 8,
+              top: 8,
+              color: (theme) => theme.palette.grey[500],
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+          {selectedCourse ? (
+            <EditIcon color="primary" fontSize="small" />
+          ) : (
+            <AddIcon color="primary" fontSize="small" />
+          )}
+          <Typography variant="h6" component="span" sx={{ fontWeight: 600 }}>
+            {selectedCourse ? 'Edit Course' : 'Add New Course'}
+          </Typography>
         </DialogTitle>
         <form onSubmit={formik.handleSubmit}>
-          <DialogContent>
-            <Grid container spacing={3}>
-              {/* Basic Information */}
+          <DialogContent sx={{ p: { xs: 2, md: 3 }, pt: { xs: 2, md: 2 }, overflowY: 'auto' }}>
+            <Grid container spacing={{ xs: 2, md: 3 }}>
+              {/* Section Header: Basic Information */}
+              <Grid item xs={12}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 1, 
+                  mb: 1,
+                  mt: 1,
+                  borderBottom: 1,
+                  borderColor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                  pb: 1
+                }}>
+                  <SchoolIcon color="primary" fontSize="small" />
+                  <Typography variant="subtitle1" color="primary.main" sx={{ fontWeight: 600 }}>
+                    Basic Information
+                  </Typography>
+                </Box>
+              </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
@@ -1546,6 +2964,26 @@ const Courses = () => {
                   onChange={formik.handleChange}
                   error={formik.touched.title && Boolean(formik.errors.title)}
                   helperText={formik.touched.title && formik.errors.title}
+                  variant="outlined"
+                  size="small"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 1.5,
+                      '&:hover fieldset': {
+                        borderColor: 'primary.main',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderWidth: 1,
+                      }
+                    },
+                    '& .MuiFormHelperText-root': {
+                      marginLeft: 0,
+                      marginRight: 0,
+                      marginTop: 0.5,
+                      lineHeight: 1.2,
+                      fontSize: '0.7rem'
+                    }
+                  }}
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
@@ -1640,11 +3078,23 @@ const Courses = () => {
                 </FormControl>
               </Grid>
 
-              {/* Credit Hours */}
+              {/* Section Header: Credit Hours */}
               <Grid item xs={12}>
-                <Typography variant="subtitle1" gutterBottom>
-                  Credit Hours
-                </Typography>
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 1, 
+                  mb: 1,
+                  mt: 2,
+                  borderBottom: 1,
+                  borderColor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                  pb: 1
+                }}>
+                  <PendingIcon color="primary" fontSize="small" />
+                  <Typography variant="subtitle1" color="primary.main" sx={{ fontWeight: 600 }}>
+                    Credit Hours
+                  </Typography>
+                </Box>
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField
@@ -1719,11 +3169,23 @@ const Courses = () => {
                 />
               </Grid>
 
-              {/* Number of Sections */}
+              {/* Section Header: Number of Sections */}
               <Grid item xs={12}>
-                <Typography variant="subtitle1" gutterBottom>
-                  Number of Sections
-                </Typography>
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 1, 
+                  mb: 1,
+                  mt: 2,
+                  borderBottom: 1,
+                  borderColor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                  pb: 1
+                }}>
+                  <BusinessIcon color="primary" fontSize="small" />
+                  <Typography variant="subtitle1" color="primary.main" sx={{ fontWeight: 600 }}>
+                    Number of Sections
+                  </Typography>
+                </Box>
               </Grid>
               <Grid item xs={12} sm={4}>
                 <TextField
@@ -1781,14 +3243,43 @@ const Courses = () => {
               </Grid>
             </Grid>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={() => {
-              setOpenDialog(false);
-              formik.resetForm();
-            }}>
+          <DialogActions sx={{ 
+            p: { xs: 2, md: 3 }, 
+            pt: 2,
+            bgcolor: (theme) => alpha(theme.palette.background.default, 0.5),
+            gap: 1,
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 1,
+            borderTop: 1,
+            borderColor: 'divider'
+          }}>
+            <Button 
+              onClick={() => {
+                setOpenDialog(false);
+                formik.resetForm();
+              }}
+              variant="outlined"
+              color="secondary"
+              startIcon={<CloseIcon />}
+              sx={{ 
+                borderRadius: 1.5,
+                px: 2
+              }}
+            >
               Cancel
             </Button>
-            <Button type="submit" variant="contained" color="primary">
+            <Button 
+              type="submit" 
+              variant="contained" 
+              color="primary"
+              startIcon={selectedCourse ? <EditIcon /> : <AddIcon />}
+              sx={{ 
+                borderRadius: 1.5,
+                px: 2,
+                fontWeight: 500
+              }}
+            >
               {selectedCourse ? 'Update Course' : 'Create Course'}
             </Button>
           </DialogActions>
@@ -1876,56 +3367,74 @@ const Courses = () => {
         handleDeleteConfirm={handleDeleteConfirm}
       />
 
-      {/* Self-Assign Confirmation Dialog */}
-      <Dialog
-        open={selfAssignDialogOpen}
-        onClose={() => !isSelfAssigning && setSelfAssignDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Self-Assign Course</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to self-assign the course "{courseToSelfAssign?.code} - {courseToSelfAssign?.title}"?
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Department: {courseToSelfAssign?.department} | School: {courseToSelfAssign?.school}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Credit Hours: {courseToSelfAssign?.creditHours} | 
-              Lecture: {courseToSelfAssign?.lectureHours}h | 
-              Lab: {courseToSelfAssign?.labHours}h | 
-              Tutorial: {courseToSelfAssign?.tutorialHours}h
-            </Typography>
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions sx={{ p: 2.5 }}>
-          <Button 
-            onClick={() => setSelfAssignDialogOpen(false)}
-            disabled={isSelfAssigning}
-            variant="outlined"
-          >
-            Cancel
-          </Button>
-          <LoadingButton
-            onClick={() => handleSelfAssign(courseToSelfAssign)}
-            loading={isSelfAssigning}
-            variant="contained"
-            color="primary"
-            startIcon={<AssignmentIndIcon />}
-          >
-            Confirm Self-Assignment
-          </LoadingButton>
-        </DialogActions>
-      </Dialog>
+      <SelfAssignDialog
+        selfAssignDialogOpen={selfAssignDialogOpen}
+        setSelfAssignDialogOpen={setSelfAssignDialogOpen}
+        courseToSelfAssign={courseToSelfAssign}
+        isSelfAssigning={isSelfAssigning}
+        handleSelfAssign={handleSelfAssign}
+      />
 
       {/* Reject Course Dialog */}
-      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Reject Course</DialogTitle>
+      <Dialog 
+        open={rejectDialogOpen} 
+        onClose={() => setRejectDialogOpen(false)} 
+        maxWidth="sm" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: (theme) => `0 8px 32px ${alpha(theme.palette.error.main, 0.1)}`,
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          p: { xs: 2, md: 3 },
+          pb: { xs: 1, md: 2 },
+          bgcolor: (theme) => alpha(theme.palette.error.main, 0.04),
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative'
+        }}>
+          <IconButton
+            aria-label="close"
+            onClick={() => setRejectDialogOpen(false)}
+            sx={{
+              position: 'absolute',
+              right: 8,
+              top: 8,
+              color: (theme) => theme.palette.grey[500],
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <CloseIcon color="error" />
+            <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+              Reject Course
+            </Typography>
+          </Box>
+          {courseToReject && (
+            <Box sx={{ mt: 2, p: 1.5, bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'divider' }}>
+              <Typography variant="subtitle1" color="error.main" sx={{ fontWeight: 500 }}>
+                {courseToReject.code} - {courseToReject.title}
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 0.5 }}>
+                <Chip 
+                  size="small" 
+                  label={`Department: ${courseToReject.department}`} 
+                  color="default" 
+                  variant="outlined"
+                />
+              </Box>
+            </Box>
+          )}
+        </DialogTitle>
         <DialogContent>
           {courseToReject && (
             <>
               <DialogContentText>
-                Please provide a reason for rejecting the course: <strong>{courseToReject.code} - {courseToReject.title}</strong>
+                Please provide a reason for rejecting this course:
               </DialogContentText>
               <TextField
                 autoFocus
@@ -1939,18 +3448,69 @@ const Courses = () => {
                 onChange={(e) => setRejectionReason(e.target.value)}
                 error={!rejectionReason.trim()}
                 helperText={!rejectionReason.trim() ? 'Rejection reason is required' : ''}
+                sx={{
+                  mt: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1.5,
+                  }
+                }}
               />
+              
+              <Box sx={{ mt: 3, p: 2, bgcolor: (theme) => alpha(theme.palette.background.default, 0.5), borderRadius: 2 }}>
+                <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1, fontWeight: 500 }}>
+                  Confirmation
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Checkbox 
+                      checked={rejectConfirmed} 
+                      onChange={(e) => setRejectConfirmed(e.target.checked)}
+                      color="error"
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Are you sure you want to reject this course?
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        I confirm that I want to reject this course with the reason provided above
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'flex-start' }}
+                />
+                
+                <Alert severity="warning" sx={{ mt: 2, borderRadius: 1.5 }}>
+                  <AlertTitle>Course Rejection</AlertTitle>
+                  Rejecting a course will send it back to the instructor for revision. 
+                  Make sure your rejection reason is clear and constructive.
+                </Alert>
+              </Box>
             </>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
+        <DialogActions sx={{ 
+          p: 2.5, 
+          bgcolor: (theme) => alpha(theme.palette.background.default, 0.5),
+          gap: 1,
+          bottom: 0,
+          zIndex: 1,
+          borderTop: 1,
+          borderColor: 'divider'
+        }}>
+          <Button 
+            onClick={() => setRejectDialogOpen(false)}
+          >
+            Cancel
+          </Button>
           <LoadingButton
             onClick={handleRejectConfirm}
             loading={isRejecting}
-            disabled={!rejectionReason.trim()}
+            disabled={!rejectionReason.trim() || !rejectConfirmed}
             color="error"
             variant="contained"
+            startIcon={<CloseIcon />}
           >
             Reject Course
           </LoadingButton>
@@ -1958,6 +3518,30 @@ const Courses = () => {
       </Dialog>
 
       <ApproveCourseDialog />
+      
+      {/* Toast Container for notifications */}
+      <ToastContainer
+        position="top-center"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        style={{ zIndex: 9999 }}
+        toastStyle={{
+          marginTop: '80px', // Ensure it appears below the header
+          marginBottom: '20px',
+          maxWidth: '90vw',
+          width: 'auto',
+          minWidth: '280px',
+          fontSize: { xs: '14px', sm: '16px' },
+          borderRadius: '8px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
+        }}
+      />
     </Container>
   );
 };
@@ -1974,6 +3558,9 @@ const AssignCourseDialog = ({
   user
 }) => {
   const hasInstructors = instructors.length > 0;
+  const [confirmed, setConfirmed] = useState(false);
+  const differentDepartment = selectedInstructor && 
+    instructors.find(i => i._id === selectedInstructor)?.department !== selectedCourse?.department;
 
   return (
     <Dialog
@@ -1981,43 +3568,92 @@ const AssignCourseDialog = ({
       onClose={() => !loadingInstructors && setOpenAssignDialog(false)}
       maxWidth="sm"
       fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          boxShadow: (theme) => `0 8px 32px ${alpha(theme.palette.primary.main, 0.1)}`,
+        }
+      }}
     >
-      <DialogTitle>
-        <Typography variant="h6" component="div">
-          Assign Course to Instructor
-        </Typography>
-        <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 1 }}>
-          {selectedCourse?.code} - {selectedCourse?.title}
-        </Typography>
-        <Typography variant="subtitle2" color="text.secondary">
-          Department: {selectedCourse?.department} | School: {selectedCourse?.school}
-        </Typography>
+      <DialogTitle sx={{ 
+        p: { xs: 2, md: 3 },
+        pb: { xs: 1, md: 2 },
+        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative'
+      }}>
+        <IconButton
+          aria-label="close"
+          onClick={() => !loadingInstructors && setOpenAssignDialog(false)}
+          sx={{
+            position: 'absolute',
+            right: 8,
+            top: 8,
+            color: (theme) => theme.palette.grey[500],
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <AssignmentIndIcon color="primary" />
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+            Assign Course to Instructor
+          </Typography>
+        </Box>
+        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle1" color="primary.main" sx={{ fontWeight: 500 }}>
+            {selectedCourse?.code} - {selectedCourse?.title}
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 0.5 }}>
+            <Chip 
+              size="small" 
+              label={`Department: ${selectedCourse?.department}`} 
+              color="default" 
+              variant="outlined"
+            />
+          </Box>
+        </Box>
       </DialogTitle>
-      <DialogContent>
-        <Box sx={{ mt: 2 }}>
+      <DialogContent sx={{ p: { xs: 2, md: 3 }, pt: { xs: 2, md: 2 } }}>
+        <Box sx={{ mt: 1 }}>
           <FormControl fullWidth>
             <InputLabel>Select Instructor</InputLabel>
             <Select
               value={selectedInstructor}
-              onChange={(e) => setSelectedInstructor(e.target.value)}
+              onChange={(e) => {
+                setSelectedInstructor(e.target.value);
+                setConfirmed(false); // Reset confirmation when instructor changes
+              }}
               disabled={loadingInstructors || !hasInstructors}
               label="Select Instructor"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 1.5,
+                }
+              }}
             >
               {instructors.map((instructor) => (
                 <MenuItem 
                   key={instructor._id} 
                   value={instructor._id}
                 >
-                  <Box sx={{ py: 1 }}>
+                  <Box sx={{ py: 0.5 }}>
                     <Typography variant="subtitle2">
                       {instructor.name}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Department: {instructor.department} • School: {instructor.school?.name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Current Workload: {instructor.totalWorkload || 0} hours
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        Department: 
+                      </Typography>
+                      <Chip 
+                        size="small" 
+                        label={instructor.department} 
+                        color={instructor.department !== selectedCourse?.department ? "warning" : "default"}
+                        variant="outlined"
+                        sx={{ height: 20, fontSize: '0.7rem' }}
+                      />
+                    </Box>
                   </Box>
                 </MenuItem>
               ))}
@@ -2026,27 +3662,89 @@ const AssignCourseDialog = ({
               {loadingInstructors 
                 ? 'Loading instructors...' 
                 : !hasInstructors
-                  ? `No instructors available in ${user.department} department of ${user.school}`
+                  ? `No instructors available in ${user.school} school`
                   : `${instructors.length} instructor${instructors.length === 1 ? '' : 's'} available`}
             </FormHelperText>
           </FormControl>
+          
+          {selectedInstructor && (
+            <Box sx={{ mt: 3, p: 2, bgcolor: (theme) => alpha(theme.palette.background.default, 0.5), borderRadius: 2 }}>
+              <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1, fontWeight: 500 }}>
+                Confirmation
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox 
+                    checked={confirmed} 
+                    onChange={(e) => setConfirmed(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      Are you sure you want to assign this course?
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      I confirm that I want to assign this course to the selected instructor
+                      {differentDepartment && (
+                        <Typography component="span" color="warning.main" sx={{ fontWeight: 500 }}>
+                          {" from a different department"}
+                        </Typography>
+                      )}
+                    </Typography>
+                  </Box>
+                }
+                sx={{ alignItems: 'flex-start' }}
+              />
+              
+              {differentDepartment && (
+                <Alert severity="warning" sx={{ mt: 2, borderRadius: 1.5 }}>
+                  <AlertTitle>Cross-Department Assignment</AlertTitle>
+                  You are assigning a course to an instructor from a different department.
+                  Please ensure this is intentional and follows your school's policies.
+                </Alert>
+              )}
+            </Box>
+          )}
         </Box>
       </DialogContent>
-      <DialogActions sx={{ p: 2.5 }}>
+      <DialogActions sx={{ 
+        p: { xs: 2, md: 3 }, 
+        pt: 2,
+        bgcolor: (theme) => alpha(theme.palette.background.default, 0.5),
+        gap: 1,
+        position: 'sticky',
+        bottom: 0,
+        zIndex: 1,
+        borderTop: 1,
+        borderColor: 'divider'
+      }}>
         <Button 
           onClick={() => setOpenAssignDialog(false)}
           disabled={loadingInstructors}
           variant="outlined"
+          color="secondary"
+          startIcon={<CloseIcon />}
+          sx={{ 
+            borderRadius: 1.5,
+            px: 2
+          }}
         >
           Cancel
         </Button>
         <LoadingButton
           onClick={handleAssignCourse}
           loading={loadingInstructors}
-          disabled={!selectedInstructor}
+          disabled={!selectedInstructor || !confirmed}
           variant="contained"
           color="primary"
           startIcon={<AssignmentIndIcon />}
+          sx={{ 
+            borderRadius: 1.5,
+            px: 2,
+            fontWeight: 500
+          }}
         >
           Assign Course
         </LoadingButton>
@@ -2095,5 +3793,144 @@ const DeleteConfirmationDialog = ({
     </DialogActions>
   </Dialog>
 );
+
+const SelfAssignDialog = ({
+  selfAssignDialogOpen,
+  setSelfAssignDialogOpen,
+  courseToSelfAssign,
+  isSelfAssigning,
+  handleSelfAssign
+}) => {
+  const [confirmed, setConfirmed] = useState(false);
+  
+  return (
+    <Dialog
+      open={selfAssignDialogOpen}
+      onClose={() => !isSelfAssigning && setSelfAssignDialogOpen(false)}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          boxShadow: (theme) => `0 8px 32px ${alpha(theme.palette.primary.main, 0.1)}`,
+        }
+      }}
+    >
+      <DialogTitle sx={{ 
+        p: { xs: 2, md: 3 },
+        pb: { xs: 1, md: 2 },
+        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative'
+      }}>
+        <IconButton
+          aria-label="close"
+          onClick={() => !isSelfAssigning && setSelfAssignDialogOpen(false)}
+          sx={{
+            position: 'absolute',
+            right: 8,
+            top: 8,
+            color: (theme) => theme.palette.grey[500],
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <AssignmentIndIcon color="primary" />
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+            Request Course Assignment
+          </Typography>
+        </Box>
+        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle1" color="primary.main" sx={{ fontWeight: 500 }}>
+            {courseToSelfAssign?.code} - {courseToSelfAssign?.title}
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 0.5 }}>
+            <Chip 
+              size="small" 
+              label={`Department: ${courseToSelfAssign?.department}`} 
+              color="default" 
+              variant="outlined"
+            />
+            <Chip 
+              size="small" 
+              label={`Semester: ${courseToSelfAssign?.semester}`} 
+              color="default" 
+              variant="outlined"
+            />
+          </Box>
+        </Box>
+      </DialogTitle>
+      <DialogContent sx={{ p: { xs: 2, md: 3 }, pt: { xs: 2, md: 2 } }}>
+        <Alert severity="info" sx={{ mb: 2, borderRadius: 1 }}>
+          <AlertTitle>Course Request Information</AlertTitle>
+          Your request will be sent to the department head for approval. You will be notified once a decision is made.
+        </Alert>
+        
+        <Box sx={{ mt: 2 }}>
+          <FormControlLabel
+            control={
+              <Checkbox 
+                checked={confirmed} 
+                onChange={(e) => setConfirmed(e.target.checked)}
+                color="primary"
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  Are you sure you want to request this course?
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  I confirm that I want to request this course assignment and understand it requires department head approval
+                </Typography>
+              </Box>
+            }
+            sx={{ alignItems: 'flex-start' }}
+          />
+        </Box>
+      </DialogContent>
+      <DialogActions sx={{ 
+        p: 2.5, 
+        bgcolor: (theme) => alpha(theme.palette.background.default, 0.5),
+        gap: 1,
+        bottom: 0,
+        zIndex: 1,
+        borderTop: 1,
+        borderColor: 'divider'
+      }}>
+        <Button 
+          onClick={() => setSelfAssignDialogOpen(false)}
+          disabled={isSelfAssigning}
+          variant="outlined"
+          color="secondary"
+          startIcon={<CloseIcon />}
+          sx={{ 
+            borderRadius: 1.5,
+            px: 2
+          }}
+        >
+          Cancel
+        </Button>
+        <LoadingButton
+          onClick={() => handleSelfAssign(courseToSelfAssign)}
+          loading={isSelfAssigning}
+          disabled={!confirmed}
+          variant="contained"
+          color="primary"
+          startIcon={<AssignmentIndIcon />}
+          sx={{ 
+            borderRadius: 1.5,
+            px: 2,
+            fontWeight: 500
+          }}
+        >
+          Request Course
+        </LoadingButton>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 export default Courses;

@@ -40,7 +40,7 @@ router.get(
 // Get instructor hours
 router.get(
   '/:id/hours',
-  authController.restrictTo('scientific-director', 'vice-director', 'department-head'),
+  authController.restrictTo('scientific-director', 'vice-director', 'department-head', 'finance'),
   userController.getUserHours
 );
 
@@ -69,7 +69,7 @@ router
 // Get user hours
 router.get(
   '/hours/:id',
-  authController.restrictTo('instructor', 'department-head', 'school-dean', 'vice-scientific-director', 'scientific-director'),
+  authController.restrictTo('instructor', 'department-head', 'school-dean', 'vice-scientific-director', 'scientific-director', 'finance'),
   userController.getUserHours
 );
 

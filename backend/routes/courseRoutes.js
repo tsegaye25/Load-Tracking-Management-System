@@ -7,6 +7,13 @@ const router = express.Router();
 // Protect all routes after this middleware
 router.use(authController.protect);
 
+// Get approved instructors with their courses and total load
+router.get(
+  '/approved-instructors',
+  authController.restrictTo('admin', 'finance'),
+  courseController.getApprovedInstructors
+);
+
 // Vice Scientific Director specific routes
 router.get(
   '/vice-director-courses',
@@ -163,6 +170,22 @@ router.post(
   authController.protect,
   authController.restrictTo('vice-scientific-director'),
   courseController.bulkApproveByViceDirector
+);
+
+// Bulk resubmit routes for courses rejected by Scientific Director
+router.post(
+  '/bulk-resubmit/:instructorId',
+  authController.protect,
+  authController.restrictTo('vice-scientific-director'),
+  courseController.bulkResubmitToScientificDirector
+);
+
+// Bulk reject routes for courses rejected by Scientific Director
+router.post(
+  '/bulk-reject/:instructorId',
+  authController.protect,
+  authController.restrictTo('vice-scientific-director'),
+  courseController.bulkRejectByViceDirector
 );
 
 // These routes must come after all specific routes

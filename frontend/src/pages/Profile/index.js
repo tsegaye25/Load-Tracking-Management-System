@@ -89,21 +89,37 @@ const Profile = () => {
     try {
       setLoading(true);
       const submitData = new FormData();
+      
+      // Only include changed fields
       Object.keys(formData).forEach(key => {
         if (key === 'avatar' && formData[key]) {
           submitData.append('avatar', formData[key]);
-        } else if (key !== 'avatar') {
+        } else if (key !== 'avatar' && formData[key] !== user[key]) {
           submitData.append(key, formData[key]);
         }
       });
 
-      const result = await dispatch(updateProfile(submitData)).unwrap();
-      if (result) {
-        toast.success('Profile updated successfully');
+      // Check if any data to update
+      if ([...submitData.entries()].length === 0) {
+        toast.info('No changes to save');
         setIsEditing(false);
+        return;
+      }
+
+      const result = await dispatch(updateProfile(submitData)).unwrap();
+      if (result?.user) {
+        setFormData(prev => ({
+          ...prev,
+          ...result.user,
+          avatar: null
+        }));
+        setPreviewImage(null);
+        setIsEditing(false);
+        toast.success('Profile updated successfully');
       }
     } catch (error) {
-      toast.error(error.message || 'Failed to update profile');
+      console.error('Profile update error:', error);
+      toast.error(error?.message || 'Failed to update profile');
     } finally {
       setLoading(false);
     }

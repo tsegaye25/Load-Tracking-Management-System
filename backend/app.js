@@ -14,6 +14,7 @@ const userRoutes = require('./routes/userRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const financeRoutes = require('./routes/financeRoutes');
 
 const app = express();
 
@@ -79,6 +80,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/courses', courseRoutes);
 app.use('/api/v1/feedbacks', feedbackRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
+app.use('/api/v1/finance', financeRoutes);
 
 // Handle undefined routes
 app.all('*', (req, res, next) => {

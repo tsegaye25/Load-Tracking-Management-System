@@ -12,8 +12,15 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Divider,
+  Fade,
+  FormControl,
+  FormControlLabel,
+  Checkbox,
   Grid,
   IconButton,
+  InputAdornment,
+  InputLabel,
   MenuItem,
   Paper,
   Skeleton,
@@ -26,10 +33,9 @@ import {
   TablePagination,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
   alpha,
-  Divider,
-  Tooltip
 } from '@mui/material';
 import {
   Check as CheckIcon,
@@ -39,7 +45,9 @@ import {
   School as SchoolIcon,
   Refresh as RefreshIcon,
   Forward as ForwardIcon,
-  Reply as ReplyIcon
+  Reply as ReplyIcon,
+  Info as InfoIcon,
+  AccountBalance as FinanceIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 
@@ -54,10 +62,24 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
 
   // Check course statuses
   const isApproved = instructor.courses.every(course => 
-    course.status === 'scientific-director-approved'
+    course.status === 'scientific-director-approved' ||
+    course.status === 'finance-approved' ||
+    course.status === 'finance-rejected' ||
+    course.status === 'finance-review'
   );
   const isRejected = instructor.courses.every(course => 
     course.status === 'scientific-director-rejected'
+  );
+  
+  // Check finance status
+  const isFinanceApproved = instructor.courses.every(course => 
+    course.status === 'finance-approved'
+  );
+  const isFinanceRejected = instructor.courses.every(course => 
+    course.status === 'finance-rejected'
+  );
+  const isFinanceReview = instructor.courses.every(course => 
+    course.status === 'finance-review'
   );
 
   const handleAction = async (action) => {
@@ -71,6 +93,114 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
   };
 
   const renderActionButtons = () => {
+    // Show finance approval status
+    if (isFinanceApproved) {
+      return (
+        <Tooltip title="Courses have been approved by Finance">
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            startIcon={<CheckIcon />}
+            disabled
+            sx={{
+              minWidth: 250,
+              '& .MuiButton-startIcon': { mr: 0.5 }
+            }}
+          >
+            Finance Approved
+          </Button>
+        </Tooltip>
+      );
+    }
+    
+    // Show action buttons for finance-rejected courses
+    if (isFinanceRejected) {
+      return (
+        <Stack direction="row" spacing={2}>
+          <Tooltip title="Approve these courses and resubmit to Finance">
+            <span>
+              <LoadingButton
+                loading={actionLoading === 'approve'}
+                loadingPosition="start"
+                startIcon={<CheckIcon />}
+                size="small"
+                variant="outlined"
+                color="success"
+                onClick={() => handleAction('approve')}
+                sx={{
+                  minWidth: 160,
+                  fontSize: '0.75rem',
+                  py: 0.5,
+                  px: 1.5,
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-1px)',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.08)'
+                  }
+                }}
+              >
+                Resubmit to Finance
+              </LoadingButton>
+            </span>
+          </Tooltip>
+          
+          <Tooltip title="Return these courses to Vice-Director for revision">
+            <span>
+              <LoadingButton
+                loading={actionLoading === 'reject'}
+                loadingPosition="start"
+                startIcon={<CloseIcon />}
+                size="small"
+                variant="outlined"
+                color="warning"
+                onClick={() => handleAction('reject')}
+                sx={{
+                  minWidth: 160,
+                  fontSize: '0.75rem',
+                  py: 0.5,
+                  px: 1.5,
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-1px)',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.08)'
+                  }
+                }}
+              >
+                Return to Vice-Director
+              </LoadingButton>
+            </span>
+          </Tooltip>
+        </Stack>
+      );
+    }
+    
+    // Show finance review status
+    if (isFinanceReview) {
+      return (
+        <Tooltip title="Courses are under review by Finance">
+          <Button
+            size="small"
+            variant="contained"
+            color="info"
+            startIcon={<RefreshIcon />}
+            disabled
+            sx={{
+              minWidth: 250,
+              '& .MuiButton-startIcon': { mr: 0.5 }
+            }}
+          >
+            Finance Review
+          </Button>
+        </Tooltip>
+      );
+    }
+    
+    // Show scientific director approval status
     if (isApproved) {
       return (
         <Tooltip title="Courses are approved and forwarded to Finance">
@@ -86,6 +216,34 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
             }}
           >
             Approved & Forwarded to Finance
+          </Button>
+        </Tooltip>
+      );
+    }
+    
+    // Show scientific director rejection status
+    if (isRejected) {
+      return (
+        <Tooltip title="These courses have been returned to the Vice-Director for revision">
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            startIcon={<ReplyIcon />}
+            disabled
+            sx={{
+              minWidth: 250,
+              '& .MuiButton-startIcon': { mr: 0.5 },
+              borderColor: 'error.main',
+              bgcolor: (theme) => alpha(theme.palette.error.light, 0.05),
+              '&.Mui-disabled': {
+                color: 'error.main',
+                borderColor: 'error.light',
+                opacity: 0.8
+              }
+            }}
+          >
+            Returned to Vice-Director
           </Button>
         </Tooltip>
       );
@@ -188,36 +346,44 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                 </TableHead>
                 <TableBody>
                   {instructor.courses.map((course) => (
-                    <TableRow key={course._id}>
-                      <TableCell component="th" scope="row">
-                        {course.code}
-                      </TableCell>
-                      <TableCell>{course.title}</TableCell>
-                      <TableCell align="right">{course.Hourfor?.creaditHours || 0}</TableCell>
-                      <TableCell align="right">{course.Hourfor?.lecture || 0}</TableCell>
-                      <TableCell align="right">{course.Hourfor?.lab || 0}</TableCell>
-                      <TableCell align="right">{course.Hourfor?.tutorial || 0}</TableCell>
-                      <TableCell align="right">
-                        <Chip
-                          label={course.totalHours}
-                          color="primary"
-                          sx={{ minWidth: 60 }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={course.status.replace(/-/g, ' ').toUpperCase()}
-                          color={
-                            course.status === 'vice-director-approved'
-                              ? 'info'
-                              : course.status === 'approved'
-                              ? 'success'
-                              : 'warning'
-                          }
-                          size="small"
-                        />
-                      </TableCell>
-                    </TableRow>
+                    <React.Fragment key={course._id}>
+                      <TableRow>
+                        <TableCell component="th" scope="row">
+                          {course.code}
+                        </TableCell>
+                        <TableCell>{course.title}</TableCell>
+                        <TableCell align="right">{course.Hourfor?.creaditHours || 0}</TableCell>
+                        <TableCell align="right">{course.Hourfor?.lecture || 0}</TableCell>
+                        <TableCell align="right">{course.Hourfor?.lab || 0}</TableCell>
+                        <TableCell align="right">{course.Hourfor?.tutorial || 0}</TableCell>
+                        <TableCell align="right">
+                          <Chip
+                            label={course.totalHours}
+                            color="primary"
+                            sx={{ minWidth: 60 }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={course.status.replace(/-/g, ' ').toUpperCase()}
+                            color={
+                              course.status === 'vice-director-approved'
+                                ? 'info'
+                                : course.status === 'finance-approved'
+                                ? 'success'
+                                : course.status === 'finance-rejected'
+                                ? 'error'
+                                : course.status === 'approved'
+                                ? 'success'
+                                : 'warning'
+                            }
+                            size="small"
+                          />
+                        </TableCell>
+                      </TableRow>
+                      
+
+                    </React.Fragment>
                   ))}
                   <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05) }}>
                     <TableCell colSpan={6} align="right" sx={{ fontWeight: 'bold' }}>
@@ -255,21 +421,111 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                       </Stack>
                     </TableCell>
                   </TableRow>
-                  <TableRow sx={{ 
-                    bgcolor: (theme) => alpha(theme.palette.success.main, 0.05),
-                    '& > td': { fontWeight: 'bold' }
-                  }}>
-                    <TableCell colSpan={6} align="right">
-                      Grand Total (Course Hours + Additional Hours):
-                    </TableCell>
-                    <TableCell align="right" colSpan={2}>
-                      <Chip
-                        label={instructor.totalWorkload}
-                        color="success"
-                        sx={{ minWidth: 60 }}
-                      />
-                    </TableCell>
-                  </TableRow>
+
+                  {/* Finance Rejection Details Row - Moved below Additional Hours */}
+                  {instructor.courses.some(course => course.status === 'finance-rejected') && (
+                    <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.error.light, 0.05) }}>
+                      <TableCell colSpan={8} sx={{ py: 1, borderBottom: '1px dashed', borderColor: 'divider' }}>
+                        <Box sx={{ px: 1 }}>
+                          <Typography variant="subtitle2" color="error.main" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <InfoIcon fontSize="small" />
+                            Finance Rejection Details
+                          </Typography>
+                          
+                          {/* Extract finance rejection details from approval history */}
+                          {(() => {
+                            // Find the finance rejected courses
+                            const rejectedCourses = instructor.courses.filter(course => 
+                              course.status === 'finance-rejected'
+                            );
+                            
+                            if (rejectedCourses.length === 0) return null;
+                            
+                            // Get rejection details from the first rejected course
+                            const course = rejectedCourses[0];
+                            const financeRejection = course.approvalHistory && 
+                              [...(course.approvalHistory || [])]
+                                .reverse()
+                                .find(entry => 
+                                  entry.role === 'finance' && 
+                                  entry.status === 'finance-rejected'
+                                );
+                            
+                            return financeRejection ? (
+                              <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                                <Grid item xs={12} sm={6} md={3}>
+                                  <Typography variant="caption" color="text.secondary" display="block">
+                                    Rejected By
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {financeRejection.approver?.name || financeRejection.approverName || 'Finance Department'}
+                                  </Typography>
+                                </Grid>
+                                
+                                <Grid item xs={12} sm={6} md={3}>
+                                  <Typography variant="caption" color="text.secondary" display="block">
+                                    Rejection Date
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {new Date(financeRejection.date).toLocaleDateString('en-US', {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric'
+                                    })}
+                                  </Typography>
+                                </Grid>
+                                
+                                <Grid item xs={12} sm={6} md={3}>
+                                  <Typography variant="caption" color="text.secondary" display="block">
+                                    Rejection Time
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {new Date(financeRejection.date).toLocaleTimeString('en-US', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      hour12: true
+                                    })}
+                                  </Typography>
+                                </Grid>
+                                
+                                <Grid item xs={12}>
+                                  <Typography variant="caption" color="text.secondary" display="block">
+                                    Reason for Rejection
+                                  </Typography>
+                                  <Paper 
+                                    variant="outlined" 
+                                    sx={{ 
+                                      p: 1.5, 
+                                      mt: 0.5, 
+                                      bgcolor: 'background.paper',
+                                      borderColor: 'error.light',
+                                      borderRadius: '8px',
+                                      '& pre': { m: 0, p: 0, fontFamily: 'inherit' }
+                                    }}
+                                  >
+                                    {/* Display only one rejection reason source, prioritizing the approval history */}
+                                    {(() => {
+                                      const rejectionMessage = financeRejection.notes || course.rejectionReason || 'No reason provided';
+                                      return (
+                                        <Typography variant="body2" component="pre" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                          {rejectionMessage}
+                                        </Typography>
+                                      );
+                                    })()} 
+                                  </Paper>
+                                </Grid>
+                              </Grid>
+                            ) : (
+                              <Typography variant="body2" color="text.secondary">
+                                No detailed rejection information available.
+                              </Typography>
+                            );
+                          })()}
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  )}
+
                 </TableBody>
               </Table>
             </Box>
@@ -289,6 +545,8 @@ const ScientificDirectorCourses = () => {
   const [selectedInstructor, setSelectedInstructor] = useState(null);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [confirmationChecked, setConfirmationChecked] = useState(false);
+  const [rejectionConfirmed, setRejectionConfirmed] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
@@ -854,24 +1112,100 @@ const ScientificDirectorCourses = () => {
         open={approvalDialogOpen}
         onClose={() => setApprovalDialogOpen(false)}
         aria-labelledby="approve-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: '12px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+            overflow: 'hidden'
+          }
+        }}
+        maxWidth="sm"
+        fullWidth
       >
-        <DialogTitle id="approve-dialog-title">
-          Forward Courses to Finance
+        <DialogTitle 
+          id="approve-dialog-title"
+          sx={{ 
+            bgcolor: 'success.lighter', 
+            color: 'success.dark',
+            py: 2,
+            fontWeight: 600
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={1}>
+            <ForwardIcon fontSize="small" />
+            Forward Courses to Finance
+          </Box>
         </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to approve and forward all courses for {selectedInstructor?.name} to Finance?
-            This action cannot be undone.
+        <DialogContent sx={{ pt: 3, pb: 1 }}>
+          <DialogContentText sx={{ mb: 3, color: 'text.primary' }}>
+            You are about to approve and forward all courses for <strong>{selectedInstructor?.name}</strong> to Finance for payment processing.
           </DialogContentText>
+          
+          <Box sx={{ 
+            p: 2, 
+            bgcolor: 'grey.50', 
+            borderRadius: '8px',
+            border: '1px solid',
+            borderColor: 'grey.200',
+            mb: 2
+          }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              This action will:
+            </Typography>
+            <Box component="ul" sx={{ pl: 2, mb: 0, mt: 0.5 }}>
+              <Typography component="li" variant="body2" color="text.secondary">
+                Change the status of all courses to "Scientific Director Approved"
+              </Typography>
+              <Typography component="li" variant="body2" color="text.secondary">
+                Notify Finance department to review payment details
+              </Typography>
+              <Typography component="li" variant="body2" color="text.secondary">
+                Send confirmation email to the instructor
+              </Typography>
+            </Box>
+          </Box>
+          
+          <FormControlLabel
+            control={
+              <Checkbox 
+                onChange={(e) => setConfirmationChecked(e.target.checked)}
+                color="success"
+              />
+            }
+            label="I confirm that I have reviewed these courses and approve them for finance processing"
+            sx={{ 
+              '& .MuiFormControlLabel-label': { 
+                fontSize: '0.875rem',
+                fontWeight: 500
+              }
+            }}
+          />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setApprovalDialogOpen(false)}>Cancel</Button>
+        <DialogActions sx={{ px: 3, py: 2, bgcolor: 'grey.50' }}>
+          <Button 
+            onClick={() => setApprovalDialogOpen(false)}
+            variant="outlined"
+            sx={{ 
+              borderRadius: '8px',
+              textTransform: 'none',
+              fontWeight: 600
+            }}
+          >
+            Cancel
+          </Button>
           <LoadingButton
             onClick={handleApprove}
             loading={isSubmitting}
             variant="contained"
             color="success"
             startIcon={<ForwardIcon />}
+            disabled={!confirmationChecked}
+            sx={{ 
+              borderRadius: '8px',
+              textTransform: 'none',
+              fontWeight: 600,
+              boxShadow: 'none'
+            }}
           >
             Forward to Finance
           </LoadingButton>
@@ -883,34 +1217,120 @@ const ScientificDirectorCourses = () => {
         open={rejectDialogOpen}
         onClose={() => setRejectDialogOpen(false)}
         aria-labelledby="reject-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: '12px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+            overflow: 'hidden'
+          }
+        }}
+        maxWidth="sm"
+        fullWidth
       >
-        <DialogTitle id="reject-dialog-title">
-          Return Courses to Vice-Director
+        <DialogTitle 
+          id="reject-dialog-title"
+          sx={{ 
+            bgcolor: 'warning.lighter', 
+            color: 'warning.dark',
+            py: 2,
+            fontWeight: 600
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={1}>
+            <ReplyIcon fontSize="small" />
+            Return Courses to Vice-Director
+          </Box>
         </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Please provide a reason for returning these courses to the Vice-Director for review.
+        <DialogContent sx={{ pt: 3, pb: 1 }}>
+          <DialogContentText sx={{ mb: 2, color: 'text.primary' }}>
+            You are about to return all courses for <strong>{selectedInstructor?.name}</strong> to the Vice-Director for further review.
           </DialogContentText>
+          
+          <Box sx={{ 
+            p: 2, 
+            bgcolor: 'grey.50', 
+            borderRadius: '8px',
+            border: '1px solid',
+            borderColor: 'grey.200',
+            mb: 3
+          }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              This action will:
+            </Typography>
+            <Box component="ul" sx={{ pl: 2, mb: 0, mt: 0.5 }}>
+              <Typography component="li" variant="body2" color="text.secondary">
+                Change the status of all courses to "Scientific Director Rejected"
+              </Typography>
+              <Typography component="li" variant="body2" color="text.secondary">
+                Notify the Vice-Director to review these courses again
+              </Typography>
+              <Typography component="li" variant="body2" color="text.secondary">
+                Include your feedback as the reason for return
+              </Typography>
+            </Box>
+          </Box>
+          
           <TextField
             autoFocus
             margin="dense"
             label="Reason for Return"
+            placeholder="Please provide specific feedback for the Vice-Director"
             type="text"
             fullWidth
             multiline
-            rows={4}
+            rows={3}
             value={rejectionReason}
             onChange={(e) => setRejectionReason(e.target.value)}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: '8px',
+                bgcolor: 'white'
+              }
+            }}
+          />
+          
+          <FormControlLabel
+            control={
+              <Checkbox 
+                onChange={(e) => setRejectionConfirmed(e.target.checked)}
+                color="warning"
+              />
+            }
+            label="I confirm that these courses need further review by the Vice-Director"
+            sx={{ 
+              mt: 2,
+              '& .MuiFormControlLabel-label': { 
+                fontSize: '0.875rem',
+                fontWeight: 500
+              }
+            }}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
+        <DialogActions sx={{ px: 3, py: 2, bgcolor: 'grey.50' }}>
+          <Button 
+            onClick={() => setRejectDialogOpen(false)}
+            variant="outlined"
+            sx={{ 
+              borderRadius: '8px',
+              textTransform: 'none',
+              fontWeight: 600
+            }}
+          >
+            Cancel
+          </Button>
           <LoadingButton
             onClick={handleReject}
             loading={isSubmitting}
             variant="contained"
             color="warning"
             startIcon={<ReplyIcon />}
+            disabled={!rejectionReason.trim() || !rejectionConfirmed}
+            sx={{ 
+              borderRadius: '8px',
+              textTransform: 'none',
+              fontWeight: 600,
+              boxShadow: 'none'
+            }}
           >
             Return to Vice-Director
           </LoadingButton>

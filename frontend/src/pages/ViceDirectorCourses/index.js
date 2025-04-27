@@ -5,7 +5,7 @@ import {
   TableRow, Paper, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Chip, CircularProgress, IconButton,
   Tooltip, alpha, TablePagination, Stack, Collapse, Divider,
-  useTheme, MenuItem
+  useTheme, MenuItem, Skeleton, Fade, Alert, FormControlLabel, Checkbox
 } from '@mui/material';
 import {
   Check as CheckIcon,
@@ -16,24 +16,39 @@ import {
   FilterList as FilterListIcon,
   Refresh as RefreshIcon,
   Forward as ForwardIcon,
-  Reply as ReplyIcon
+  Reply as ReplyIcon,
+  Info as InfoIcon,
+  AccountBalance as FinanceIcon
 } from '@mui/icons-material';
 import { LoadingButton } from '@mui/lab';
 import { toast } from 'react-toastify';
 import axios from 'axios';
+import { useSnackbar } from 'notistack';
 
 // Row component for expandable table
 const InstructorRow = ({ instructor, onApprove, onReject }) => {
   const theme = useTheme();
+  const { enqueueSnackbar } = useSnackbar();
   const [open, setOpen] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [bulkRejectDialogOpen, setBulkRejectDialogOpen] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
   const [bulkRejectionNotes, setBulkRejectionNotes] = useState('');
+  const [isResubmitting, setIsResubmitting] = useState(false);
+  const [resubmitDialogOpen, setResubmitDialogOpen] = useState(false);
+  const [resubmitConfirmed, setResubmitConfirmed] = useState(false);
+  const [returnToDeanDialogOpen, setReturnToDeanDialogOpen] = useState(false);
+  const [returnToDeanConfirmed, setReturnToDeanConfirmed] = useState(false);
+  const [approveAllConfirmed, setApproveAllConfirmed] = useState(false);
+  const [rejectAllConfirmed, setRejectAllConfirmed] = useState(false);
   
   const allCoursesApproved = instructor.courses.every(course => 
-    course.status === 'vice-director-approved' || course.status === 'scientific-director-approved'
+    course.status === 'vice-director-approved' || 
+    course.status === 'scientific-director-approved' ||
+    course.status === 'finance-approved' ||
+    course.status === 'finance-rejected' ||
+    course.status === 'finance-review'
   );
 
   const allCoursesRejected = instructor.courses.every(course => 
@@ -41,7 +56,28 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
   );
 
   const scientificDirectorApproved = instructor.courses.every(course => 
-    course.status === 'scientific-director-approved'
+    course.status === 'scientific-director-approved' ||
+    course.status === 'finance-approved' ||
+    course.status === 'finance-rejected' ||
+    course.status === 'finance-review'
+  );
+  
+  // Check for scientific director rejection
+  const scientificDirectorRejected = instructor.courses.every(course => 
+    course.status === 'scientific-director-rejected'
+  );
+  
+  // Check finance status
+  const isFinanceApproved = instructor.courses.every(course => 
+    course.status === 'finance-approved'
+  );
+  
+  const isFinanceRejected = instructor.courses.every(course => 
+    course.status === 'finance-rejected'
+  );
+  
+  const isFinanceReview = instructor.courses.every(course => 
+    course.status === 'finance-review'
   );
 
   const hasApprovableCourses = instructor.courses.some(course => 
@@ -135,7 +171,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
       );
 
       const response = await fetch(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/courses/bulk-approve-vice-director/${instructor._id}`,
+        `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/courses/bulk-reject/${instructor._id}`,
         {
           method: 'POST',
           headers: {
@@ -144,7 +180,6 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
           },
           body: JSON.stringify({
             courseIds: rejectableCourses.map(course => course._id),
-            action: 'reject',
             notes: bulkRejectionNotes
           })
         }
@@ -167,7 +202,192 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
     }
   };
 
+  const handleResubmitClick = async () => {
+    try {
+      setIsResubmitting(true);
+      const resubmittableCourses = instructor.courses.filter(course => 
+        course.status === 'scientific-director-rejected'
+      );
+
+      if (resubmittableCourses.length === 0) {
+        toast.info('No courses available for resubmission');
+        return;
+      }
+
+      const response = await fetch(
+        `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/courses/bulk-resubmit/${instructor._id}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            courseIds: resubmittableCourses.map(course => course._id)
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to resubmit courses');
+      }
+
+      toast.success(`Successfully resubmitted all courses for ${instructor.name}`);
+      onApprove(); // Refresh the list
+      window.location.reload(); // Force page refresh to update all statuses
+    } catch (error) {
+      console.error('Error in instructor bulk resubmission:', error);
+      toast.error(`Failed to resubmit courses for ${instructor.name}`);
+    } finally {
+      setIsResubmitting(false);
+    }
+  };
+
+  const handleResubmitConfirm = () => {
+    setResubmitConfirmed(true);
+    handleResubmitClick();
+  };
+
+  const handleReturnToDeanClick = async () => {
+    try {
+      setIsRejecting(true);
+      const rejectableCourses = instructor.courses.filter(course => 
+        course.status === 'scientific-director-rejected'
+      );
+
+      if (rejectableCourses.length === 0) {
+        toast.info('No courses available for rejection');
+        return;
+      }
+
+      if (!bulkRejectionNotes.trim()) {
+        toast.error('Please provide rejection notes');
+        return;
+      }
+
+      const response = await fetch(
+        `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/courses/bulk-reject/${instructor._id}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            courseIds: rejectableCourses.map(course => course._id),
+            notes: bulkRejectionNotes
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to reject courses');
+      }
+
+      toast.success(`Successfully returned courses to Dean for ${instructor.name}`);
+      setReturnToDeanDialogOpen(false);
+      setBulkRejectionNotes('');
+      setReturnToDeanConfirmed(false);
+      onReject(); // Refresh the list
+    } catch (error) {
+      console.error('Error in instructor bulk rejection:', error);
+      toast.error(`Failed to return courses to Dean for ${instructor.name}`);
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
+  const handleReturnToDeanConfirm = () => {
+    setReturnToDeanConfirmed(true);
+    handleReturnToDeanClick();
+  };
+
   const renderStatusBox = () => {
+    // Show finance approved status
+    if (isFinanceApproved) {
+      return (
+        <Box sx={{ 
+          p: 1.5, 
+          borderRadius: 1, 
+          bgcolor: alpha('#66bb6a', 0.04),
+          border: '1px solid',
+          borderColor: alpha('#66bb6a', 0.15),
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+        }}>
+          <FinanceIcon sx={{ color: alpha('#388e3c', 0.7) }} />
+          <Typography 
+            variant="subtitle2" 
+            sx={{ 
+              color: alpha('#2e7d32', 0.85), 
+              fontWeight: 600 
+            }}
+          >
+            Finance Approved
+          </Typography>
+        </Box>
+      );
+    }
+    
+    // Show finance rejected status
+    if (isFinanceRejected) {
+      return (
+        <Box sx={{ 
+          p: 1.5, 
+          borderRadius: 1, 
+          bgcolor: alpha(theme.palette.error.main, 0.04),
+          border: '1px solid',
+          borderColor: alpha(theme.palette.error.main, 0.15),
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+        }}>
+          <FinanceIcon sx={{ color: alpha(theme.palette.error.main, 0.7) }} />
+          <Typography 
+            variant="subtitle2" 
+            sx={{ 
+              color: alpha(theme.palette.error.main, 0.85), 
+              fontWeight: 600 
+            }}
+          >
+            Finance Rejected
+          </Typography>
+        </Box>
+      );
+    }
+    
+    // Show finance review status
+    if (isFinanceReview) {
+      return (
+        <Box sx={{ 
+          p: 1.5, 
+          borderRadius: 1, 
+          bgcolor: alpha(theme.palette.info.main, 0.04),
+          border: '1px solid',
+          borderColor: alpha(theme.palette.info.main, 0.15),
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+        }}>
+          <FinanceIcon sx={{ color: alpha(theme.palette.info.main, 0.7) }} />
+          <Typography 
+            variant="subtitle2" 
+            sx={{ 
+              color: alpha(theme.palette.info.main, 0.85), 
+              fontWeight: 600 
+            }}
+          >
+            Under Finance Review
+          </Typography>
+        </Box>
+      );
+    }
+
+    // Show vice director rejected status
     if (allCoursesRejected) {
       return (
         <Box sx={{ 
@@ -195,34 +415,57 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
       );
     }
 
-    if (allCoursesApproved) {
+    // Show scientific director approved status
+    if (scientificDirectorApproved) {
       return (
         <Box sx={{ 
           p: 1.5, 
           borderRadius: 1, 
-          bgcolor: scientificDirectorApproved ? alpha('#66bb6a', 0.04) : alpha('#42a5f5', 0.04),
+          bgcolor: alpha('#66bb6a', 0.04),
           border: '1px solid',
-          borderColor: scientificDirectorApproved ? alpha('#66bb6a', 0.15) : alpha('#42a5f5', 0.15),
+          borderColor: alpha('#66bb6a', 0.15),
           display: 'flex',
           alignItems: 'center',
           gap: 1,
           boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
         }}>
-          {scientificDirectorApproved ? (
-            <CheckIcon sx={{ color: alpha('#388e3c', 0.7) }} />
-          ) : (
-            <ForwardIcon sx={{ color: alpha('#1976d2', 0.7) }} />
-          )}
+          <CheckIcon sx={{ color: alpha('#388e3c', 0.7) }} />
           <Typography 
             variant="subtitle2" 
             sx={{ 
-              color: scientificDirectorApproved ? alpha('#2e7d32', 0.85) : alpha('#1565c0', 0.85), 
+              color: alpha('#2e7d32', 0.85), 
               fontWeight: 600 
             }}
           >
-            {scientificDirectorApproved ? 
-              'Approved by Scientific Director' : 
-              'Approved & Forwarded to Scientific Director'}
+            Approved by Scientific Director
+          </Typography>
+        </Box>
+      );
+    }
+    
+    // Show vice director approved status
+    if (allCoursesApproved) {
+      return (
+        <Box sx={{ 
+          p: 1.5, 
+          borderRadius: 1, 
+          bgcolor: alpha('#42a5f5', 0.04),
+          border: '1px solid',
+          borderColor: alpha('#42a5f5', 0.15),
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+        }}>
+          <ForwardIcon sx={{ color: alpha('#1976d2', 0.7) }} />
+          <Typography 
+            variant="subtitle2" 
+            sx={{ 
+              color: alpha('#1565c0', 0.85), 
+              fontWeight: 600 
+            }}
+          >
+            Approved & Forwarded to Scientific Director
           </Typography>
         </Box>
       );
@@ -240,6 +483,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                   allCoursesApproved ? alpha(theme.palette.primary.main, 0.04) :
                   allCoursesRejected ? alpha(theme.palette.error.main, 0.04) : 'inherit'
         }}
+        data-instructor-id={instructor._id}
       >
         <TableCell>
           <IconButton
@@ -278,19 +522,45 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                 size="small"
                 onClick={handleBulkRejectClick}
                 startIcon={<CloseIcon />}
+                data-action="reject"
               >
                 Reject All
               </Button>
             </Stack>
           )}
           {(allCoursesApproved || allCoursesRejected) && renderStatusBox()}
+          {scientificDirectorRejected && (
+            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                onClick={() => setResubmitDialogOpen(true)}
+                startIcon={<ReplyIcon />}
+              >
+                Resubmit to S.D
+              </Button>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                onClick={() => setReturnToDeanDialogOpen(true)}
+                startIcon={<CloseIcon />}
+              >
+                Return to Dean
+              </Button>
+            </Stack>
+          )}
         </TableCell>
       </TableRow>
 
       {/* Confirmation Dialog */}
       <Dialog
         open={confirmDialogOpen}
-        onClose={() => setConfirmDialogOpen(false)}
+        onClose={() => {
+          setConfirmDialogOpen(false);
+          setApproveAllConfirmed(false);
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -321,11 +591,26 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
             <Typography variant="body1" sx={{ mt: 2, color: 'text.secondary' }}>
               All selected courses will be approved and forwarded to the Scientific Director for final review.
             </Typography>
+            <Box sx={{ mt: 2 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={approveAllConfirmed}
+                    onChange={(e) => setApproveAllConfirmed(e.target.checked)}
+                    name="approveAllConfirmed"
+                  />
+                }
+                label="I confirm that I want to approve all eligible courses for this instructor."
+              />
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions>
           <Button 
-            onClick={() => setConfirmDialogOpen(false)}
+            onClick={() => {
+              setConfirmDialogOpen(false);
+              setApproveAllConfirmed(false);
+            }}
             color="inherit"
             disabled={isApproving}
           >
@@ -337,6 +622,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
             color="primary"
             variant="contained"
             autoFocus
+            disabled={!approveAllConfirmed}
           >
             Confirm Approval
           </LoadingButton>
@@ -346,7 +632,10 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
       {/* Bulk Rejection Dialog */}
       <Dialog
         open={bulkRejectDialogOpen}
-        onClose={() => setBulkRejectDialogOpen(false)}
+        onClose={() => {
+          setBulkRejectDialogOpen(false);
+          setRejectAllConfirmed(false);
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -386,6 +675,18 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
               helperText={!bulkRejectionNotes.trim() ? "Please provide a reason for rejection" : ""}
               required
             />
+            <Box sx={{ mt: 2 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={rejectAllConfirmed}
+                    onChange={(e) => setRejectAllConfirmed(e.target.checked)}
+                    name="rejectAllConfirmed"
+                  />
+                }
+                label="I confirm that I want to reject all eligible courses for this instructor."
+              />
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -393,6 +694,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
             onClick={() => {
               setBulkRejectDialogOpen(false);
               setBulkRejectionNotes('');
+              setRejectAllConfirmed(false);
             }}
             color="inherit"
             disabled={isRejecting}
@@ -404,10 +706,191 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
             loading={isRejecting}
             color="error"
             variant="contained"
-            disabled={!bulkRejectionNotes.trim()}
+            disabled={!bulkRejectionNotes.trim() || !rejectAllConfirmed}
             autoFocus
           >
             Confirm Rejection
+          </LoadingButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Resubmit Confirmation Dialog */}
+      <Dialog
+        open={resubmitDialogOpen}
+        onClose={() => {
+          setResubmitDialogOpen(false);
+          setResubmitConfirmed(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Confirm Resubmission
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body1" gutterBottom>
+              You are about to resubmit all rejected courses for:
+            </Typography>
+            <Box sx={{ 
+              mb: 1,
+              p: 1.5,
+              borderRadius: 1,
+              bgcolor: alpha(theme.palette.primary.main, 0.04),
+              border: '1px solid',
+              borderColor: alpha(theme.palette.primary.main, 0.15),
+            }}>
+              <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <ReplyIcon sx={{ color: theme.palette.primary.main }} />
+                {instructor.name} ({instructor.courses.filter(course => 
+                  course.status === 'scientific-director-rejected'
+                ).length} courses)
+              </Typography>
+            </Box>
+            <Typography variant="body1" sx={{ mt: 2, color: 'text.secondary' }}>
+              All selected courses will be resubmitted to the Scientific Director for review.
+            </Typography>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body1" gutterBottom>
+                Are you sure you want to proceed?
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={resubmitConfirmed}
+                    onChange={(e) => setResubmitConfirmed(e.target.checked)}
+                    name="resubmitConfirmed"
+                  />
+                }
+                label="I confirm that I want to resubmit the courses."
+              />
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => {
+              setResubmitDialogOpen(false);
+              setResubmitConfirmed(false);
+            }}
+            color="inherit"
+            disabled={isResubmitting}
+          >
+            Cancel
+          </Button>
+          <LoadingButton
+            onClick={handleResubmitConfirm}
+            loading={isResubmitting}
+            color="primary"
+            variant="contained"
+            disabled={!resubmitConfirmed}
+            autoFocus
+          >
+            Confirm Resubmission
+          </LoadingButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Return to Dean Confirmation Dialog */}
+      <Dialog
+        open={returnToDeanDialogOpen}
+        onClose={() => {
+          setReturnToDeanDialogOpen(false);
+          setReturnToDeanConfirmed(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Confirm Return to Dean
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body1" gutterBottom>
+              You are about to return all rejected courses to the Dean for:
+            </Typography>
+            <Box sx={{ 
+              mb: 1,
+              p: 1.5,
+              borderRadius: 1,
+              bgcolor: alpha(theme.palette.error.main, 0.04),
+              border: '1px solid',
+              borderColor: alpha(theme.palette.error.main, 0.15),
+            }}>
+              <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <CloseIcon sx={{ color: theme.palette.error.main }} />
+                {instructor.name} ({instructor.courses.filter(course => 
+                  course.status === 'scientific-director-rejected'
+                ).length} courses)
+              </Typography>
+            </Box>
+            <Typography variant="body1" sx={{ mt: 2, color: 'text.secondary' }}>
+              All selected courses will be returned to the Dean for review.
+            </Typography>
+            
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="subtitle2" color="error.main" gutterBottom>
+                Rejection Reason (Required)
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={4}
+                margin="normal"
+                label="Explain why these courses are being returned to the Dean"
+                value={bulkRejectionNotes}
+                onChange={(e) => setBulkRejectionNotes(e.target.value)}
+                error={!bulkRejectionNotes.trim()}
+                helperText={!bulkRejectionNotes.trim() ? "Please provide a reason for returning these courses" : ""}
+                required
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    '&.Mui-focused fieldset': {
+                      borderColor: 'error.main',
+                    },
+                  },
+                }}
+              />
+            </Box>
+            
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body1" gutterBottom>
+                Are you sure you want to proceed?
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={returnToDeanConfirmed}
+                    onChange={(e) => setReturnToDeanConfirmed(e.target.checked)}
+                    name="returnToDeanConfirmed"
+                  />
+                }
+                label="I confirm that I want to return the courses to the Dean."
+              />
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => {
+              setReturnToDeanDialogOpen(false);
+              setBulkRejectionNotes('');
+              setReturnToDeanConfirmed(false);
+            }}
+            color="inherit"
+            disabled={isRejecting}
+          >
+            Cancel
+          </Button>
+          <LoadingButton
+            onClick={handleReturnToDeanConfirm}
+            loading={isRejecting}
+            color="error"
+            variant="contained"
+            disabled={!returnToDeanConfirmed || !bulkRejectionNotes.trim()}
+            autoFocus
+          >
+            Confirm Return to Dean
           </LoadingButton>
         </DialogActions>
       </Dialog>
@@ -449,6 +932,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
               <Typography variant="h6" gutterBottom component="div">
                 Courses
               </Typography>
+              
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -479,6 +963,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                             course.status === 'vice-director-approved' ? 'primary' :
                             course.status === 'vice-director-rejected' ? 'error' :
                             course.status === 'scientific-director-approved' ? 'success' :
+                            course.status === 'scientific-director-rejected' ? 'error' :
                             'default'
                           }
                           size="small"
@@ -508,6 +993,76 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                   </TableRow>
                 </TableBody>
               </Table>
+              
+              {/* Scientific Director Rejection Details - Only show when rejected */}
+              {scientificDirectorRejected && (
+                <Box sx={{ 
+                  mt: 3, 
+                  p: 2, 
+                  borderRadius: 2,
+                  bgcolor: alpha(theme.palette.error.main, 0.04),
+                  border: '1px solid',
+                  borderColor: alpha(theme.palette.error.main, 0.15),
+                }}>
+                  <Typography variant="subtitle1" sx={{ 
+                    mb: 1.5, 
+                    color: theme.palette.error.dark,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                  }}>
+                    <CloseIcon fontSize="small" />
+                    Rejection Details
+                  </Typography>
+                  
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={6}>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Rejected By:
+                      </Typography>
+                      <Typography variant="body1" gutterBottom>
+                        Scientific Director
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Rejection Date:
+                      </Typography>
+                      <Typography variant="body1" gutterBottom>
+                        {instructor.courses[0]?.updatedAt ? new Date(instructor.courses[0].updatedAt).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        }) : 'N/A'}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12}>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Rejection Reason:
+                      </Typography>
+                      <Paper elevation={0} sx={{ 
+                        p: 2, 
+                        bgcolor: alpha(theme.palette.error.main, 0.02),
+                        border: '1px solid',
+                        borderColor: alpha(theme.palette.error.main, 0.1),
+                        borderRadius: 1
+                      }}>
+                        <Typography variant="body1">
+                          {instructor.courses[0]?.rejectionReason || 'No reason provided'}
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={12} sx={{ mt: 1 }}>
+                      <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
+                        <InfoIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                        These courses need to be reviewed and resubmitted by the Vice Director.
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
             </Box>
           </Collapse>
         </TableCell>
@@ -516,8 +1071,26 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
   );
 };
 
+const TableRowSkeleton = () => (
+  <TableRow>
+    <TableCell><Skeleton variant="text" /></TableCell>
+    <TableCell><Skeleton variant="text" /></TableCell>
+    <TableCell><Skeleton variant="text" /></TableCell>
+    <TableCell><Skeleton variant="text" /></TableCell>
+    <TableCell><Skeleton variant="text" /></TableCell>
+    <TableCell><Skeleton variant="text" width={120} /></TableCell>
+    <TableCell align="right">
+      <Stack direction="row" spacing={1} justifyContent="flex-end">
+        <Skeleton variant="circular" width={40} height={40} />
+        <Skeleton variant="circular" width={40} height={40} />
+      </Stack>
+    </TableCell>
+  </TableRow>
+);
+
 const ViceDirectorCourses = () => {
   const theme = useTheme();
+  const { enqueueSnackbar } = useSnackbar();
   const [instructors, setInstructors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
@@ -541,6 +1114,8 @@ const ViceDirectorCourses = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterSchool, setFilterSchool] = useState('all');
   const [filterDepartment, setFilterDepartment] = useState('all');
+  const [bulkApprovalConfirmed, setBulkApprovalConfirmed] = useState(false);
+  const [bulkRejectionConfirmed, setBulkRejectionConfirmed] = useState(false);
 
   // Prepare bulk approval
   const handleBulkApprovalClick = () => {
@@ -607,6 +1182,7 @@ const ViceDirectorCourses = () => {
 
       toast.success('Successfully approved all eligible courses');
       setBulkApprovalDialogOpen(false);
+      setBulkApprovalConfirmed(false);
       fetchInstructorCourses(); // Refresh the list
     } catch (error) {
       console.error('Error in bulk approval:', error);
@@ -668,8 +1244,31 @@ const ViceDirectorCourses = () => {
       });
 
       const instructorList = Array.from(instructorMap.values());
-      setInstructors(instructorList);
-      setTotalInstructors(instructorList.length);
+      
+      // Sort instructors to prioritize those with pending or not approved courses
+      const sortedInstructorList = instructorList.sort((a, b) => {
+        // Check if instructor A has pending/not approved courses
+        const aHasPendingCourses = a.courses.some(course => 
+          course.status === 'dean-approved' || 
+          course.status === 'scientific-director-rejected'
+        );
+        
+        // Check if instructor B has pending/not approved courses
+        const bHasPendingCourses = b.courses.some(course => 
+          course.status === 'dean-approved' || 
+          course.status === 'scientific-director-rejected'
+        );
+        
+        // Prioritize instructors with pending courses
+        if (aHasPendingCourses && !bHasPendingCourses) return -1;
+        if (!aHasPendingCourses && bHasPendingCourses) return 1;
+        
+        // If both have the same status, sort alphabetically by name
+        return a.name.localeCompare(b.name);
+      });
+      
+      setInstructors(sortedInstructorList);
+      setTotalInstructors(sortedInstructorList.length);
     } catch (error) {
       console.error('Error fetching courses:', error);
       toast.error('Failed to fetch courses');
@@ -755,6 +1354,28 @@ const ViceDirectorCourses = () => {
   };
 
   const handleRejectClick = (instructor) => {
+    // Instead of showing a second dialog, use the instructor's bulk reject dialog directly
+    if (instructor && instructor.courses && instructor.courses.length > 0) {
+      // Check if any courses are eligible for rejection
+      const eligibleCourses = instructor.courses.filter(course => 
+        course.status === 'dean-approved' && 
+        !['vice-director-approved', 'vice-director-rejected', 'scientific-director-approved'].includes(course.status)
+      );
+      
+      if (eligibleCourses.length > 0) {
+        // Use the existing bulk reject functionality in the instructor row
+        const instructorRow = document.querySelector(`[data-instructor-id="${instructor._id}"]`);
+        if (instructorRow) {
+          const rejectButton = instructorRow.querySelector('[data-action="reject"]');
+          if (rejectButton) {
+            rejectButton.click();
+            return;
+          }
+        }
+      }
+    }
+    
+    // Fallback to the old method if something goes wrong
     setSelectedInstructorForReject(instructor);
     setRejectDialogOpen(true);
   };
@@ -880,7 +1501,7 @@ const ViceDirectorCourses = () => {
           if (rejectableCourses.length === 0) return;
 
           const response = await fetch(
-            `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/courses/bulk-approve-vice-director/${instructor._id}`,
+            `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/courses/bulk-reject/${instructor._id}`,
             {
               method: 'POST',
               headers: {
@@ -889,7 +1510,6 @@ const ViceDirectorCourses = () => {
               },
               body: JSON.stringify({
                 courseIds: rejectableCourses.map(course => course._id),
-                action: 'reject',
                 notes: bulkRejectionNotes,
                 returnToDean: true
               })
@@ -1098,11 +1718,9 @@ const ViceDirectorCourses = () => {
           </TableHead>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
-                  <CircularProgress />
-                </TableCell>
-              </TableRow>
+              [...Array(rowsPerPage)].map((_, index) => (
+                <TableRowSkeleton key={index} />
+              ))
             ) : filteredInstructors.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
@@ -1134,99 +1752,15 @@ const ViceDirectorCourses = () => {
         />
       </TableContainer>
 
-      {/* Approval Confirmation Dialog */}
-      <Dialog
-        open={approvalDialogOpen}
-        onClose={() => !isSubmitting && setApprovalDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" component="div">
-            Confirm Course Approval
-          </Typography>
-          <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 1 }}>
-            Instructor: {selectedInstructor?.name}
-          </Typography>
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle2" gutterBottom color="text.secondary">
-              The following courses will be forwarded to the Scientific Director for final review:
-            </Typography>
-            <Box sx={{ mb: 3, pl: 2 }}>
-              {selectedInstructor?.courses.map(course => (
-                <Box key={course._id} sx={{ mb: 1 }}>
-                  <Typography variant="body2">
-                    • {course.code} - {course.title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ pl: 2 }}>
-                    Total Hours: {course.totalHours}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-            <Typography variant="body2" color="info.main" sx={{ mt: 2 }}>
-              Total Workload: {selectedInstructor?.courses.reduce((sum, course) => sum + (course.totalHours || 0), 0)} hours
-            </Typography>
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ p: 2.5 }}>
-          <Button
-            onClick={() => setApprovalDialogOpen(false)}
-            disabled={isSubmitting}
-            color="inherit"
-          >
-            Cancel
-          </Button>
-          <LoadingButton
-            onClick={handleApprovalConfirm}
-            loading={isSubmitting}
-            variant="contained"
-            color="success"
-          >
-            Confirm & Forward to Scientific Director
-          </LoadingButton>
-        </DialogActions>
-      </Dialog>
 
-      {/* Rejection Dialog */}
-      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)}>
-        <DialogTitle>Reject Courses</DialogTitle>
-        <DialogContent>
-          <Typography variant="body1" gutterBottom>
-            Please provide a reason for rejecting the courses for instructor: {selectedInstructorForReject?.name}
-          </Typography>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Rejection Reason"
-            fullWidth
-            multiline
-            rows={4}
-            value={rejectionReason}
-            onChange={(e) => setRejectionReason(e.target.value)}
-            required
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
-          <LoadingButton
-            onClick={handleReject}
-            loading={loading}
-            variant="contained"
-            color="warning"
-            disabled={!rejectionReason.trim()}
-          >
-            Reject Courses
-          </LoadingButton>
-        </DialogActions>
-      </Dialog>
 
       {/* Bulk Approval Confirmation Dialog */}
       <Dialog
         open={bulkApprovalDialogOpen}
-        onClose={() => setBulkApprovalDialogOpen(false)}
+        onClose={() => {
+          setBulkApprovalDialogOpen(false);
+          setBulkApprovalConfirmed(false);
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -1256,11 +1790,29 @@ const ViceDirectorCourses = () => {
             <Typography variant="body1" sx={{ mt: 2, color: 'text.secondary' }}>
               All selected courses will be approved and forwarded to the Scientific Director for final review.
             </Typography>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body1" gutterBottom>
+                Are you sure you want to proceed?
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={bulkApprovalConfirmed}
+                    onChange={(e) => setBulkApprovalConfirmed(e.target.checked)}
+                    name="bulkApprovalConfirmed"
+                  />
+                }
+                label="I confirm that I want to approve the courses."
+              />
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions>
           <Button 
-            onClick={() => setBulkApprovalDialogOpen(false)}
+            onClick={() => {
+              setBulkApprovalDialogOpen(false);
+              setBulkApprovalConfirmed(false);
+            }}
             color="inherit"
             disabled={isSubmitting}
           >
@@ -1271,6 +1823,7 @@ const ViceDirectorCourses = () => {
             loading={isSubmitting}
             color="primary"
             variant="contained"
+            disabled={!bulkApprovalConfirmed}
             autoFocus
           >
             Confirm Bulk Approval
@@ -1281,7 +1834,10 @@ const ViceDirectorCourses = () => {
       {/* Bulk Rejection Confirmation Dialog */}
       <Dialog
         open={bulkRejectDialogOpen}
-        onClose={() => setBulkRejectDialogOpen(false)}
+        onClose={() => {
+          setBulkRejectDialogOpen(false);
+          setBulkRejectionConfirmed(false);
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -1328,6 +1884,21 @@ const ViceDirectorCourses = () => {
               helperText={!bulkRejectionNotes.trim() ? "Please provide a reason for rejection" : ""}
               required
             />
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body1" gutterBottom>
+                Are you sure you want to proceed?
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={bulkRejectionConfirmed}
+                    onChange={(e) => setBulkRejectionConfirmed(e.target.checked)}
+                    name="bulkRejectionConfirmed"
+                  />
+                }
+                label="I confirm that I want to reject the courses."
+              />
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -1335,6 +1906,7 @@ const ViceDirectorCourses = () => {
             onClick={() => {
               setBulkRejectDialogOpen(false);
               setBulkRejectionNotes('');
+              setBulkRejectionConfirmed(false);
             }}
             color="inherit"
             disabled={isSubmitting}
@@ -1346,7 +1918,7 @@ const ViceDirectorCourses = () => {
             loading={isSubmitting}
             color="error"
             variant="contained"
-            disabled={!bulkRejectionNotes.trim()}
+            disabled={!bulkRejectionConfirmed || !bulkRejectionNotes.trim()}
             autoFocus
           >
             Confirm Bulk Rejection

@@ -408,9 +408,10 @@ exports.getDepartmentHeads = catchAsync(async (req, res, next) => {
 });
 
 exports.getInstructors = catchAsync(async (req, res) => {
+  // For department heads, show all instructors in their school
   const instructors = await User.find({ 
     role: 'instructor',
-    department: req.user.department 
+    school: req.user.school // Changed from department to school to allow access to all instructors in the school
   }).select('name email department school');
 
   res.status(200).json({

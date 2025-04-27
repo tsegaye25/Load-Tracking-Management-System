@@ -1,8 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
+import { SnackbarProvider } from 'notistack';
 import { Box } from '@mui/material';
-import 'react-toastify/dist/ReactToastify.css';
 import Layout from './components/Layout';
 import Footer from './components/Footer';
 import Login from './pages/Login';
@@ -22,6 +21,9 @@ import ViceDirectorCourses from './pages/ViceDirectorCourses';
 import ViceDirectorDashboard from './pages/ViceDirectorDashboard';
 import ScientificDirectorDashboard from './pages/ScientificDirectorDashboard';
 import ScientificDirectorCourses from './pages/ScientificDirectorCourses';
+import FinanceDashboard from './pages/FinanceDashboard';
+import FinanceCourses from './pages/FinanceCourses';
+import PaymentCalculator from './pages/PaymentCalculator';
 import { useSelector } from 'react-redux';
 import PrivateRoute from './components/PrivateRoute'; // Assuming PrivateRoute is defined in this file
 
@@ -38,7 +40,8 @@ const App = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <Router>
+      <SnackbarProvider maxSnack={3}>
+        <Router>
         <Routes>
           {/* Public routes */}
           <Route
@@ -101,6 +104,8 @@ const App = () => {
                   <Navigate to="/vice-director/dashboard" replace />
                 ) : user?.role === 'scientific-director' ? (
                   <Navigate to="/scientific-director/dashboard" replace />
+                ) : user?.role === 'finance' ? (
+                  <Navigate to="/finance/dashboard" replace />
                 ) : (
                   <Layout>
                     <Dashboard />
@@ -193,6 +198,40 @@ const App = () => {
               />
             </>
           )}
+          {user?.role === 'finance' && (
+            <>
+              <Route
+                path="/finance/dashboard"
+                element={
+                  <PrivateRoute allowedRoles={['finance']}>
+                    <Layout>
+                      <FinanceDashboard />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/finance/courses"
+                element={
+                  <PrivateRoute allowedRoles={['finance']}>
+                    <Layout>
+                      <FinanceCourses />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/finance/payment-calculator"
+                element={
+                  <PrivateRoute allowedRoles={['finance']}>
+                    <Layout>
+                      <PaymentCalculator />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+            </>
+          )}
           <Route
             path="/profile"
             element={
@@ -266,8 +305,8 @@ const App = () => {
             }
           />
         </Routes>
-      </Router>
-      <ToastContainer position="top-right" autoClose={3000} />
+        </Router>
+      </SnackbarProvider>
     </Box>
   );
 };
