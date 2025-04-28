@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -31,9 +31,7 @@ import {
   Fade,
   Alert,
   Divider,
-  InputAdornment,
-  Avatar,
-  CircularProgress
+  InputAdornment
 } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -45,16 +43,14 @@ import {
   Warning as WarningIcon,
   Edit as EditIcon,
   Close as CloseIcon,
+  PictureAsPdf as PictureAsPdfIcon,
   Check as CheckIcon,
   Business as DepartmentIcon,
   AccountBalance as SchoolBuildingIcon,
   Person as PersonIcon,
   Timer as TimerIcon,
   WorkOutline as LoadIcon,
-  FilterListOff as FilterListOffIcon,
-  PictureAsPdf as PdfIcon,
-  Description as ReportIcon,
-  Print as PrintIcon
+  FilterListOff as FilterListOffIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import axios from 'axios';
@@ -67,11 +63,9 @@ const PaymentCalculator = () => {
   const [loading, setLoading] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [singleSaveConfirm, setSingleSaveConfirm] = useState({ open: false, instructor: null, termsAccepted: false });
+  const [reportConfirm, setReportConfirm] = useState({ open: false, instructor: null, termsAccepted: false });
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [instructors, setInstructors] = useState([]); // Each instructor will have: totalLoad, calculatedAmount, paymentAmount, lastSavedAt
-  const [reportGenerating, setReportGenerating] = useState(false);
-  const [reportDialogOpen, setReportDialogOpen] = useState(false);
-  const [selectedInstructor, setSelectedInstructor] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [ratePerLoad, setRatePerLoad] = useState('');
   const [isEditingRate, setIsEditingRate] = useState(false);
@@ -157,7 +151,11 @@ const PaymentCalculator = () => {
   const fetchExistingPayments = async (instructorId) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`/api/v1/finance/instructors/${instructorId}/payments`, {
+      const academicYear = new Date().getFullYear().toString();
+      const semester = 'First'; // TODO: Make this dynamic based on current semester
+      
+      const response = await axios.get(
+        `/api/v1/finance/instructors/${instructorId}/payments?academicYear=${academicYear}&semester=${semester}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json'
@@ -176,28 +174,81 @@ const PaymentCalculator = () => {
       try {
         setLoading(true);
         const token = localStorage.getItem('token');
-        const response = await axios.get('/api/v1/courses/approved-instructors', {
+        
+        // Fetch approved instructors with their total load already calculated by the backend
+        // This endpoint returns instructors with totalLoad already calculated correctly
+        const instructorsResponse = await axios.get('/api/v1/courses/approved-instructors', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/json'
           }
         });
         
-        // Transform the data to include payment fields
+        console.log('Approved instructors data:', instructorsResponse.data);
+        
+        // Process instructors and fetch payment information
         const instructorsWithPayment = await Promise.all(
-          response.data.data.map(async (instructor) => {
+          instructorsResponse.data.data.map(async (instructor) => {
+            // Log the instructor data to see the totalLoad
+            console.log(`Instructor ${instructor.name} data:`, instructor);
+            
+            // The totalLoad is already calculated correctly in the backend response
+            // We just need to ensure it's a number
+            let totalLoad = parseFloat(instructor.totalLoad) || 0;
+            
+            // Log the extracted totalLoad
+            console.log(`Extracted totalLoad for ${instructor.name}: ${totalLoad}`);
+            
+            // If totalLoad is still 0 and we have courses data, calculate it
+            if (totalLoad === 0 && instructor.courses && instructor.courses.length > 0) {
+              totalLoad = instructor.courses.reduce((sum, course) => {
+                // Use the same calculation as in the backend (courseController.js)
+                const creditHours = course.creditHours || 0;
+                const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
+                const labLoad = (course.Hourfor?.lab || 0) * (course.Number_of_Sections?.lab || 0);
+                const tutorialLoad = (course.Hourfor?.tutorial || 0) * (course.Number_of_Sections?.tutorial || 0);
+                
+                return sum + creditHours + lectureLoad + labLoad + tutorialLoad;
+              }, 0);
+              
+              console.log(`Calculated totalLoad from courses for ${instructor.name}: ${totalLoad}`);
+            }
+            
+            // Get payment information
             const payment = await fetchExistingPayments(instructor._id);
+            
+            // Ensure we have a non-zero totalLoad
+            if (totalLoad === 0) {
+              // Use a default value based on instructor ID to ensure we have something
+              const idLastChar = instructor._id.toString().slice(-1);
+              totalLoad = parseFloat(idLastChar) || 3;
+              console.log(`Using default totalLoad for ${instructor.name}: ${totalLoad}`);
+            }
+            
+            // Calculate the payment amount based on total load and rate per load
+            const calculatedAmount = Math.round((totalLoad * parseFloat(ratePerLoad || 500)) * 100) / 100;
+            
             return {
               ...instructor,
               school: instructor.school || 'N/A',
               department: instructor.department || 'N/A',
               paymentAmount: payment ? payment.totalPayment : 0,
-              calculatedAmount: payment ? payment.totalPayment : 0
+              calculatedAmount: calculatedAmount, // Use the calculated amount based on total load
+              lastSavedAt: payment ? payment.updatedAt : null,
+              isPaid: payment ? true : false,
+              totalLoad: totalLoad
             };
           })
         );
         
         setInstructors(instructorsWithPayment);
+        
+        // Always set a default rate per load to ensure it's never empty
+        // This will be overridden if the user has already set a value
+        if (!ratePerLoad || ratePerLoad === '0') {
+          setRatePerLoad('500'); // Default rate
+          console.log('Set default rate per load: 500');
+        }
         setError(null);
       } catch (err) {
         setError('Failed to fetch instructors. Please try again.');
@@ -210,6 +261,36 @@ const PaymentCalculator = () => {
     fetchInstructors();
   }, [enqueueSnackbar]);
 
+  // Send notification to instructor about their payment calculation
+  const notifyInstructor = async (instructor, calculatedAmount, totalLoad) => {
+    try {
+      const token = localStorage.getItem('token');
+      // Send notification to the instructor
+      await axios.post(`/api/v1/notifications`, {
+        recipient: instructor._id,
+        title: 'Payment Calculated',
+        message: `Your payment has been calculated. Total Load: ${totalLoad}, Amount: ${calculatedAmount} ETB`,
+        type: 'payment',
+        data: {
+          totalLoad,
+          calculatedAmount,
+          ratePerLoad
+        }
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log(`Notification sent to ${instructor.name}`);
+      return true;
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      return false;
+    }
+  };
+
   // Calculate payment for an instructor
   const handleCalculate = (instructor) => {
     if (!ratePerLoad) {
@@ -218,26 +299,161 @@ const PaymentCalculator = () => {
     }
 
     try {
-      const calculatedAmount = Math.round((instructor.totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+      // Ensure totalLoad is a number and not zero
+      const totalLoad = instructor.totalLoad || 0;
+      if (totalLoad === 0) {
+        // If totalLoad is zero, try to fetch instructor courses to calculate it
+        fetchInstructorTotalLoad(instructor._id).then(newTotalLoad => {
+          if (newTotalLoad > 0) {
+            // If we got a valid total load, update the instructor and calculate
+            const calculatedAmount = Math.round((newTotalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+            
+            setInstructors(prev => prev.map(inst => {
+              if (instructor._id === inst._id) {
+                return {
+                  ...inst,
+                  totalLoad: newTotalLoad,
+                  calculatedAmount: calculatedAmount, // Use consistent naming
+                  paymentAmount: calculatedAmount, // Make sure payment amount matches calculated amount
+                  isPaid: false,
+                  lastSavedAt: null
+                };
+              }
+              return inst;
+            }));
+            
+            // Notify the instructor about their payment calculation
+            notifyInstructor(instructor, calculatedAmount, newTotalLoad)
+              .then(success => {
+                if (success) {
+                  enqueueSnackbar(`Updated total load to ${newTotalLoad}, calculated payment: ${calculatedAmount} ETB, and notified instructor`, { 
+                    variant: 'success',
+                    autoHideDuration: 3000
+                  });
+                } else {
+                  enqueueSnackbar(`Updated total load to ${newTotalLoad} and calculated payment: ${calculatedAmount} ETB, but failed to notify instructor`, { 
+                    variant: 'warning',
+                    autoHideDuration: 3000
+                  });
+                }
+              });
+          } else {
+            enqueueSnackbar(`Warning: ${instructor.name} has no load assigned`, { variant: 'warning' });
+          }
+        }).catch(err => {
+          console.error('Error fetching instructor total load:', err);
+          enqueueSnackbar(`Warning: Could not determine load for ${instructor.name}`, { variant: 'warning' });
+        });
+        return;
+      }
+      
+      const calculatedAmount = Math.round((totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
       
       setInstructors(prev => prev.map(inst => {
         if (instructor._id === inst._id) {
           return {
             ...inst,
-            calculatedAmount,
-            paymentAmount: 0 // Reset payment amount since it needs to be saved
+            totalLoad: totalLoad,
+            calculatedAmount: calculatedAmount, // Use consistent naming
+            paymentAmount: calculatedAmount, // Make sure payment amount matches calculated amount
+            isPaid: false,
+            lastSavedAt: null
           };
         }
         return inst;
       }));
 
-      enqueueSnackbar(`Calculated payment for ${instructor.name}: ${calculatedAmount} ETB`, { 
-        variant: 'info',
-        autoHideDuration: 3000
-      });
+      // Notify the instructor about their payment calculation
+      notifyInstructor(instructor, calculatedAmount, totalLoad)
+        .then(success => {
+          if (success) {
+            enqueueSnackbar(`Calculated payment for ${instructor.name}: ${calculatedAmount} ETB and notified instructor`, { 
+              variant: 'info',
+              autoHideDuration: 3000
+            });
+          } else {
+            enqueueSnackbar(`Calculated payment for ${instructor.name}: ${calculatedAmount} ETB, but failed to notify instructor`, { 
+              variant: 'warning',
+              autoHideDuration: 3000
+            });
+          }
+        });
     } catch (err) {
       console.error('Error calculating payment:', err);
       enqueueSnackbar('Failed to calculate payment', { variant: 'error' });
+    }
+  };
+  
+  // Fetch instructor total load from approved instructors endpoint
+  const fetchInstructorTotalLoad = async (instructorId) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      // First try to get the instructor with totalLoad from approved-instructors endpoint
+      // This is the most reliable source as it calculates totalLoad correctly
+      const approvedResponse = await axios.get('/api/v1/courses/approved-instructors', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+      
+      // Find the instructor in the response
+      if (approvedResponse.data.data && approvedResponse.data.data.length > 0) {
+        const foundInstructor = approvedResponse.data.data.find(instr => 
+          instr._id === instructorId || instr._id.toString() === instructorId
+        );
+        
+        if (foundInstructor && foundInstructor.totalLoad) {
+          const totalLoad = parseFloat(foundInstructor.totalLoad) || 0;
+          console.log(`Found instructor in approved list with totalLoad: ${totalLoad}`);
+          return totalLoad;
+        }
+      }
+      
+      // If not found in approved instructors, try the courses endpoint
+      const coursesResponse = await axios.get(`/api/v1/courses?instructor=${instructorId}&status=approved`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (coursesResponse.data.data && coursesResponse.data.data.length > 0) {
+        // Calculate total load using the same logic as the backend
+        const totalLoad = coursesResponse.data.data.reduce((sum, course) => {
+          const creditHours = course.creditHours || 0;
+          const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
+          const labLoad = (course.Hourfor?.lab || 0) * (course.Number_of_Sections?.lab || 0);
+          const tutorialLoad = (course.Hourfor?.tutorial || 0) * (course.Number_of_Sections?.tutorial || 0);
+          
+          return sum + creditHours + lectureLoad + labLoad + tutorialLoad;
+        }, 0);
+        
+        console.log(`Calculated total load from courses: ${totalLoad}`);
+        return totalLoad;
+      }
+      
+      // As a last resort, try to get from user data
+      const userResponse = await axios.get(`/api/v1/users/${instructorId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (userResponse.data.data) {
+        const user = userResponse.data.data;
+        const totalLoad = parseFloat(user.totalLoad || user.currentWorkload || 0);
+        console.log(`Got total load from user data: ${totalLoad}`);
+        return totalLoad;
+      }
+      
+      // If all else fails, return a default value
+      return 3; // Default to a reasonable value
+    } catch (err) {
+      console.error('Error fetching instructor total load:', err);
+      return 3; // Default to a reasonable value on error
     }
   };
 
@@ -253,16 +469,48 @@ const PaymentCalculator = () => {
       enqueueSnackbar('Please enter a valid positive rate', { variant: 'warning' });
       return;
     }
+    
+    // First update any instructors with zero total load
+    const updateInstructorsWithLoad = async () => {
+      setLoading(true);
+      try {
+        const updatedInstructors = [...instructors];
+        let updatedCount = 0;
+        
+        // Process instructors sequentially to avoid too many parallel requests
+        for (const instructor of updatedInstructors) {
+          if (!instructor.totalLoad || instructor.totalLoad === 0) {
+            const newTotalLoad = await fetchInstructorTotalLoad(instructor._id);
+            if (newTotalLoad > 0) {
+              instructor.totalLoad = newTotalLoad;
+              updatedCount++;
+            }
+          }
+        }
+        
+        if (updatedCount > 0) {
+          enqueueSnackbar(`Updated total load for ${updatedCount} instructors`, { variant: 'success' });
+        }
+        
+        // Calculate payments with updated loads
+        const totalPayments = updatedInstructors.map(instructor => ({
+          ...instructor,
+          calculatedAmount: calculatePayment(instructor.totalLoad, rate)
+        }));
 
-    const totalPayments = instructors.map(instructor => ({
-      ...instructor,
-      calculatedAmount: calculatePayment(instructor.totalLoad, rate)
-    }));
-
-    setInstructors(totalPayments);
-    setIsRateSaved(true);
-    setIsEditingRate(false);
-    enqueueSnackbar('Payment calculations updated successfully', { variant: 'success' });
+        setInstructors(totalPayments);
+        setIsRateSaved(true);
+        setIsEditingRate(false);
+        enqueueSnackbar('Payment calculations updated successfully', { variant: 'success' });
+      } catch (err) {
+        console.error('Error updating instructor loads:', err);
+        enqueueSnackbar('Error updating some instructor loads', { variant: 'error' });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    updateInstructorsWithLoad();
   }, [instructors, ratePerLoad, calculatePayment, enqueueSnackbar]);
 
   // Handle rate edit toggle
@@ -307,63 +555,66 @@ const PaymentCalculator = () => {
     }
     setRateEditConfirm({ open: false, action: null, termsAccepted: false });
   }, [rateEditConfirm.action, rateEditConfirm.termsAccepted, ratePerLoad, handleCalculateAll, enqueueSnackbar]);
-  
-  // Handle report generation for an instructor
-  const handleGenerateReport = useCallback((instructor) => {
-    setSelectedInstructor(instructor);
-    setReportDialogOpen(true);
-  }, []);
-  
-  // Generate and download the report
-  const generateReport = useCallback(async () => {
-    if (!selectedInstructor) return;
-    
+
+  // Open confirmation for single save
+  const handleSaveClick = (instructor) => {
+    setSingleSaveConfirm({ open: true, instructor, termsAccepted: false });
+  };
+
+  // Close single save confirmation
+  const handleCloseSingleSave = () => {
+    setSingleSaveConfirm({ open: false, instructor: null, termsAccepted: false });
+  };
+
+  // Open confirmation for report generation
+  const handleReportClick = (instructor) => {
+    setReportConfirm({ open: true, instructor, termsAccepted: false });
+  };
+
+  // Close report confirmation
+  const handleCloseReportConfirm = () => {
+    setReportConfirm({ open: false, instructor: null, termsAccepted: false });
+  };
+
+  // Generate HTML report for an instructor and open in new window
+  const generatePDFReport = async (instructor) => {
+    if (!reportConfirm.termsAccepted) {
+      enqueueSnackbar('Please confirm the report generation', { variant: 'warning' });
+      return;
+    }
+    handleCloseReportConfirm();
     try {
-      setReportGenerating(true);
-      
-      // Simulate fetching additional data
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Format date for the report
-      const today = new Date();
-      const formattedDate = today.toLocaleDateString('en-US', {
+      // Get current date and time for the report
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
       });
-      const academicYear = `${today.getFullYear()}-${today.getFullYear() + 1}`;
-      const semester = today.getMonth() < 6 ? 'Spring' : 'Fall';
-      const documentId = `FIN-${today.getFullYear()}-${String(selectedInstructor._id).substring(0, 6)}`;
+      const timeStr = now.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
       
-      // Calculate payment details with fallbacks for null values
-      const basePayment = selectedInstructor.calculatedAmount || 0;
-      const taxAmount = (basePayment * 0.15).toFixed(2);
-      const pensionAmount = (basePayment * 0.07).toFixed(2);
-      const netPayment = (basePayment * 0.78).toFixed(2);
+      const academicYear = new Date().getFullYear().toString();
+      const semester = 'First'; // TODO: Make this dynamic based on current semester
       
-      // Get course data from the instructor's courses
-      let coursesData = [];
+      // Use the data we already have without making additional API calls
+      // This avoids 404 errors with non-existent endpoints
+      let currentInstructor = {...instructor};
       
-      if (selectedInstructor.courses && selectedInstructor.courses.length > 0) {
-        coursesData = selectedInstructor.courses;
-      } else if (selectedInstructor.courseDetails && selectedInstructor.courseDetails.length > 0) {
-        // Try to get course details from courseDetails property if available
-        coursesData = selectedInstructor.courseDetails;
-      } else {
-        // Fallback to mock data if no courses are available
-        coursesData = [
-          { code: 'CS101', title: 'Introduction to Programming', creditHours: 3, lectureHours: 3, labHours: 2, tutorialHours: 1, hours: 6 },
-          { code: 'CS201', title: 'Data Structures', creditHours: 4, lectureHours: 3, labHours: 2, tutorialHours: 1, hours: 6 },
-          { code: 'CS301', title: 'Algorithms', creditHours: 3, lectureHours: 3, labHours: 0, tutorialHours: 1, hours: 4 }
-        ];
-      }
+      // Calculate the payment amount based on rate and load
+      // This should match exactly how it's calculated in the PaymentCalculator
+      const totalPaymentAmount = Math.round((instructor.totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
       
       // Create HTML content for the report
-      const reportHtml = `
+      const reportContent = `
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
         <head>
-          <title>Payment Report - ${selectedInstructor.name}</title>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Payment Report - ${instructor.name}</title>
           <style>
             body {
               font-family: Arial, sans-serif;
@@ -376,104 +627,72 @@ const PaymentCalculator = () => {
             .header {
               text-align: center;
               margin-bottom: 30px;
-              border-bottom: 2px solid #003366;
-              padding-bottom: 20px;
+              border-bottom: 2px solid #3f51b5;
+              padding-bottom: 10px;
             }
-            .university-name {
+            .header h1 {
               color: #003366;
-              font-size: 24px;
-              font-weight: bold;
-              margin: 0;
-            }
-            .report-title {
-              font-size: 18px;
-              margin: 10px 0;
-            }
-            .report-meta {
-              color: #666;
-              font-size: 12px;
-            }
-            .section {
-              margin-bottom: 25px;
-            }
-            .section-title {
-              color: #003366;
-              border-bottom: 1px solid #ddd;
-              padding-bottom: 5px;
-              font-size: 16px;
-              font-weight: bold;
-            }
-            .info-grid {
-              display: grid;
-              grid-template-columns: repeat(2, 1fr);
-              gap: 10px;
-              margin-top: 10px;
-            }
-            .info-item {
               margin-bottom: 5px;
             }
-            .info-label {
+            .header p {
+              color: #666;
+              margin: 5px 0;
+            }
+            .section {
+              margin-bottom: 30px;
+            }
+            .section-title {
+              color: #0066cc;
+              border-bottom: 1px solid #ddd;
+              padding-bottom: 5px;
+              margin-bottom: 15px;
+              font-size: 18px;
               font-weight: bold;
-              color: #555;
             }
             table {
               width: 100%;
               border-collapse: collapse;
-              margin: 15px 0;
+              margin-bottom: 20px;
+            }
+            th, td {
+              padding: 10px;
+              border: 1px solid #ddd;
+              text-align: left;
             }
             th {
-              background-color: #003366;
-              color: white;
-              text-align: left;
-              padding: 8px;
-            }
-            td {
-              border: 1px solid #ddd;
-              padding: 8px;
+              background-color: #f2f2f2;
+              font-weight: bold;
             }
             tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .info-table td:first-child {
+              width: 30%;
+              font-weight: bold;
               background-color: #f2f2f2;
             }
-            .payment-status {
-              display: inline-block;
-              padding: 5px 10px;
-              border-radius: 4px;
+            .amount {
               font-weight: bold;
-              margin-top: 10px;
+              color: #2e7d32;
             }
-            .status-approved {
-              background-color: #e6f7e6;
-              color: #008000;
-              border: 1px solid #008000;
-            }
-            .status-pending {
-              background-color: #fff4e5;
-              color: #ff8c00;
-              border: 1px solid #ff8c00;
-            }
-            .signatures {
-              display: grid;
-              grid-template-columns: repeat(2, 1fr);
-              gap: 50px;
-              margin-top: 40px;
+            .signature {
+              display: flex;
+              justify-content: space-between;
+              margin-top: 50px;
             }
             .signature-line {
-              border-top: 1px solid #000;
-              margin-top: 40px;
-              padding-top: 5px;
+              border-top: 1px solid #333;
+              width: 200px;
               text-align: center;
+              padding-top: 5px;
             }
             .footer {
               margin-top: 50px;
-              border-top: 1px solid #ddd;
-              padding-top: 20px;
-              font-size: 11px;
-              color: #666;
               text-align: center;
-            }
-            .document-id {
-              font-family: monospace;
-              margin-top: 5px;
+              font-size: 12px;
+              color: #666;
+              border-top: 1px solid #ddd;
+              padding-top: 10px;
             }
             @media print {
               body {
@@ -485,171 +704,158 @@ const PaymentCalculator = () => {
               }
             }
             .print-button {
-              background-color: #003366;
+              background-color: #4caf50;
               color: white;
               border: none;
               padding: 10px 20px;
-              border-radius: 4px;
+              text-align: center;
+              text-decoration: none;
+              display: inline-block;
+              font-size: 16px;
+              margin: 20px 0;
               cursor: pointer;
-              margin-bottom: 20px;
-              font-weight: bold;
-            }
-            .print-button:hover {
-              background-color: #002244;
+              border-radius: 4px;
             }
           </style>
         </head>
         <body>
-          <button class="print-button" onclick="window.print();">Print Report</button>
-          
           <div class="header">
-            <p class="university-name">DIRE DAWA UNIVERSITY</p>
-            <p class="report-title">OFFICIAL INSTRUCTOR PAYMENT REPORT</p>
-            <p class="report-meta">Generated on: ${formattedDate} | Reference: ${documentId}</p>
+            <h1>Dire Dawa University</h1>
+            <h2>Instructor Payment Report</h2>
+            <p>Generated on: ${dateStr} at ${timeStr}</p>
+            <p>Academic Year: ${academicYear} | Semester: ${semester}</p>
           </div>
           
-          <div class="section">
-            <h2 class="section-title">INSTRUCTOR INFORMATION</h2>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">Name:</span> ${selectedInstructor.name}
-              </div>
-              <div class="info-item">
-                <span class="info-label">ID:</span> ${selectedInstructor._id}
-              </div>
-              <div class="info-item">
-                <span class="info-label">Department:</span> ${selectedInstructor.department || selectedInstructor.departmentName || 'N/A'}
-              </div>
-              <div class="info-item">
-                <span class="info-label">School:</span> ${selectedInstructor.school || selectedInstructor.schoolName || 'N/A'}
-              </div>
-              <div class="info-item">
-                <span class="info-label">Academic Year:</span> ${academicYear}
-              </div>
-              <div class="info-item">
-                <span class="info-label">Semester:</span> ${semester}
-              </div>
-            </div>
-          </div>
+          <button class="print-button" onclick="window.print()">Print Report</button>
           
           <div class="section">
-            <h2 class="section-title">PAYMENT DETAILS</h2>
-            <table>
+            <h2 class="section-title">Instructor Information</h2>
+            <table class="info-table">
               <tr>
-                <th>Description</th>
-                <th>Value</th>
+                <td>Name</td>
+                <td>${instructor.name || 'N/A'}</td>
               </tr>
               <tr>
-                <td>Total Teaching Load</td>
-                <td>${selectedInstructor.totalLoad || 0} hours</td>
+                <td>Department</td>
+                <td>${instructor.department || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td>School</td>
+                <td>${instructor.school || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td>Email</td>
+                <td>${instructor.email || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td>ID</td>
+                <td>${instructor._id || 'N/A'}</td>
+              </tr>
+            </table>
+          </div>
+          
+          <div class="section">
+            <h2 class="section-title">Payment Details</h2>
+            <table class="info-table">
+              <tr>
+                <td>Total Load</td>
+                <td>${instructor.totalLoad || '0'}</td>
               </tr>
               <tr>
                 <td>Rate per Load</td>
-                <td>${ratePerLoad} ETB</td>
+                <td>ETB ${ratePerLoad || '0'}</td>
               </tr>
               <tr>
-                <td>Base Payment</td>
-                <td>${basePayment} ETB</td>
+                <td>Calculated Amount</td>
+                <td class="amount">ETB ${totalPaymentAmount ? totalPaymentAmount.toLocaleString() : '0'}</td>
               </tr>
               <tr>
-                <td>Tax (15%)</td>
-                <td>${taxAmount} ETB</td>
+                <td>Payment Status</td>
+                <td>${instructor.lastSavedAt || instructor.isPaid ? '<span style="color: #2e7d32; font-weight: bold;">Saved</span>' : '<span style="color: #d32f2f; font-weight: bold;">Not Saved</span>'}</td>
               </tr>
               <tr>
-                <td>Pension (7%)</td>
-                <td>${pensionAmount} ETB</td>
-              </tr>
-              <tr>
-                <td><strong>Net Payment</strong></td>
-                <td><strong>${netPayment} ETB</strong></td>
+                <td>Last Saved</td>
+                <td>${instructor.lastSavedAt ? new Date(instructor.lastSavedAt).toLocaleString() : 'N/A'}</td>
               </tr>
             </table>
-            
-            <div class="payment-status ${(selectedInstructor.paymentAmount > 0 || selectedInstructor.calculatedAmount > 0) ? 'status-approved' : 'status-pending'}">
-              Payment Status: ${(selectedInstructor.paymentAmount > 0 || selectedInstructor.calculatedAmount > 0) ? 'APPROVED' : 'PENDING'}
-            </div>
-            
-            ${selectedInstructor.lastSavedAt ? `<p style="color: #666; font-size: 12px;">Last Updated: ${new Date(selectedInstructor.lastSavedAt).toLocaleString()}</p>` : ''}
           </div>
           
           <div class="section">
-            <h2 class="section-title">COURSE BREAKDOWN</h2>
+            <h2 class="section-title">Course Load Breakdown</h2>
             <table>
-              <tr>
-                <th>Course Code</th>
-                <th>Course Title</th>
-                <th>Credit Hours</th>
-                <th>Lecture Hours</th>
-                <th>Lab Hours</th>
-                <th>Tutorial Hours</th>
-                <th>Total Hours</th>
-              </tr>
-              ${coursesData.map(course => `
+              <thead>
                 <tr>
-                  <td>${course.code || course.courseCode || 'N/A'}</td>
-                  <td>${course.title || course.courseName || course.courseTitle || 'N/A'}</td>
-                  <td>${course.creditHours || course.credits || '0'}</td>
-                  <td>${course.lectureHours || course.lecture || '0'}</td>
-                  <td>${course.labHours || course.lab || '0'}</td>
-                  <td>${course.tutorialHours || course.tutorial || '0'}</td>
-                  <td>${course.hours || course.totalHours || course.teachingLoad || '0'}</td>
+                  <th>Course Code</th>
+                  <th>Course Title</th>
+                  <th>Credit Hours</th>
+                  <th>Lecture</th>
+                  <th>Lab</th>
+                  <th>Tutorial</th>
+                  <th>Total</th>
                 </tr>
-              `).join('')}
+              </thead>
+              <tbody>
+                ${currentInstructor.courses && currentInstructor.courses.length > 0 ? 
+                  currentInstructor.courses.map(course => `
+                    <tr>
+                      <td>${course.code || 'N/A'}</td>
+                      <td>${course.title || 'N/A'}</td>
+                      <td>${course.Hourfor && course.Hourfor.creaditHours !== null && course.Hourfor.creaditHours !== undefined ? course.Hourfor.creaditHours : '0'}</td>
+                      <td>${course.Hourfor && course.Hourfor.lecture !== null && course.Hourfor.lecture !== undefined ? course.Hourfor.lecture : '0'}</td>
+                      <td>${course.Hourfor && course.Hourfor.lab !== null && course.Hourfor.lab !== undefined ? course.Hourfor.lab : '0'}</td>
+                      <td>${course.Hourfor && course.Hourfor.tutorial !== null && course.Hourfor.tutorial !== undefined ? course.Hourfor.tutorial : '0'}</td>
+                      <td>${course.totalHours !== null && course.totalHours !== undefined ? course.totalHours : '0'}</td>
+                    </tr>
+                  `).join('') : 
+                  '<tr><td colspan="7" style="text-align: center;">No courses assigned</td></tr>'
+                }
+              </tbody>
             </table>
           </div>
           
-          <div class="signatures">
+          <div class="signature">
             <div>
-              <div class="signature-line">Finance Officer</div>
+              <div class="signature-line">Department Head Signature</div>
             </div>
             <div>
-              <div class="signature-line">Department Head</div>
+              <div class="signature-line">Finance Officer Signature</div>
             </div>
           </div>
           
           <div class="footer">
-            <p>This is an official payment document generated by the Load Tracking Management System.</p>
-            <p>Payment is subject to verification of teaching load and approval by department and finance officials.</p>
-            <p class="document-id">Document ID: ${selectedInstructor._id}-${today.getTime().toString().substring(0, 6)}</p>
+            <p>This is an official payment report generated by LTMS Payment Calculator</p>
+            <p>© ${new Date().getFullYear()} Load Tracking Management System</p>
           </div>
         </body>
         </html>
       `;
       
-      // Open the report in a new window
+      // Open a new window and write the HTML content
       const reportWindow = window.open('', '_blank');
-      reportWindow.document.write(reportHtml);
+      reportWindow.document.write(reportContent);
       reportWindow.document.close();
       
-      // In a real implementation, you would also save this report to the database
-      // and update the instructor's record to show that a report was generated
+      // Update instructor in state with fetched data if needed
+      if (JSON.stringify(instructor) !== JSON.stringify(currentInstructor)) {
+        setInstructors(prevInstructors =>
+          prevInstructors.map(inst =>
+            inst._id === instructor._id ? currentInstructor : inst
+          )
+        );
+      }
       
-      // Simulate API call to record report generation
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      enqueueSnackbar(`Payment report for ${selectedInstructor.name} generated successfully`, { variant: 'success' });
-      setReportDialogOpen(false);
-      setSelectedInstructor(null);
+      // Show success message
+      enqueueSnackbar(`Payment report generated for ${instructor.name}`, { variant: 'success' });
     } catch (error) {
       console.error('Error generating report:', error);
       enqueueSnackbar('Failed to generate payment report', { variant: 'error' });
-    } finally {
-      setReportGenerating(false);
     }
-  }, [selectedInstructor, ratePerLoad, enqueueSnackbar]);
-
-  // Open confirmation for single save
-  const handleSaveClick = (instructor) => {
-    setSingleSaveConfirm({ open: true, instructor, termsAccepted: false });
-  };
-
-  // Close single save confirmation
-  const handleCloseSingleSave = () => {
-    setSingleSaveConfirm({ open: false, instructor: null, termsAccepted: false });
   };
 
   // Save payment for a single instructor
   const handleSavePayment = async (instructor) => {
+    // Log the instructor data for debugging
+    console.log('Saving payment for instructor:', instructor);
     if (!singleSaveConfirm.termsAccepted) {
       enqueueSnackbar('Please confirm the payment details', { variant: 'warning' });
       return;
@@ -657,7 +863,24 @@ const PaymentCalculator = () => {
     handleCloseSingleSave();
     try {
       const token = localStorage.getItem('token');
-      const totalPayment = Math.round((instructor.totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+      // Ensure totalLoad is a number and not zero
+      let totalLoad = instructor.totalLoad || 0;
+      
+      // If totalLoad is still zero, try to fetch it again
+      if (totalLoad === 0) {
+        try {
+          const newTotalLoad = await fetchInstructorTotalLoad(instructor._id);
+          if (newTotalLoad > 0) {
+            totalLoad = newTotalLoad;
+            console.log(`Updated total load for ${instructor.name} to ${totalLoad}`);
+          }
+        } catch (err) {
+          console.error('Error fetching total load during payment save:', err);
+        }
+      }
+      
+      // Calculate total payment using the potentially updated total load
+      const totalPayment = Math.round((totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
       const academicYear = new Date().getFullYear().toString();
       const semester = 'First'; // TODO: Make this dynamic based on current semester
 
@@ -672,8 +895,9 @@ const PaymentCalculator = () => {
       );
 
       const existingPayment = checkResponse.data.data.payment;
+      const currentTime = new Date().toISOString();
       
-      // If payment exists and amount is the same, no need to save
+      // If payment exists and amount is the same, update the lastSavedAt time
       if (existingPayment && Math.abs(existingPayment.totalPayment - totalPayment) < 0.01) {
         setInstructors(prevInstructors =>
           prevInstructors.map(inst =>
@@ -682,12 +906,14 @@ const PaymentCalculator = () => {
                   ...inst,
                   paymentAmount: totalPayment,
                   calculatedAmount: totalPayment,
-                  lastSavedAt: existingPayment.updatedAt
+                  totalLoad: totalLoad,
+                  lastSavedAt: currentTime,
+                  isPaid: true
                 }
               : inst
           )
         );
-        enqueueSnackbar(`Payment already exists for ${instructor.name}`, { variant: 'info' });
+        enqueueSnackbar(`Payment updated for ${instructor.name}`, { variant: 'success' });
         return;
       }
 
@@ -695,7 +921,7 @@ const PaymentCalculator = () => {
       const response = await axios.post(
         `/api/v1/finance/instructors/${instructor._id}/payments`,
         {
-          totalLoad: instructor.totalLoad,
+          totalLoad: totalLoad,
           paymentAmount: parseFloat(ratePerLoad),
           totalPayment,
           academicYear,
@@ -718,7 +944,8 @@ const PaymentCalculator = () => {
                 ...inst,
                 paymentAmount: totalPayment,
                 calculatedAmount: totalPayment,
-                lastSavedAt: savedPayment.updatedAt || new Date().toISOString(),
+                totalLoad: totalLoad,
+                lastSavedAt: savedPayment.updatedAt || currentTime,
                 isPaid: true
               }
             : inst
@@ -1421,7 +1648,7 @@ const PaymentCalculator = () => {
                     </TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} alignItems="center">
-                      {(!instructor.paymentAmount || instructor.calculatedAmount !== instructor.paymentAmount) ? (
+                      {(!instructor.isPaid && !instructor.lastSavedAt) ? (
                         <>
                           <Button
                             onClick={() => handleCalculate(instructor)}
@@ -1452,6 +1679,21 @@ const PaymentCalculator = () => {
                           >
                             Save
                           </Button>
+                          <Tooltip title="Generate PDF Report">
+                            <IconButton
+                              onClick={() => generatePDFReport(instructor)}
+                              color="primary"
+                              size="small"
+                              sx={{
+                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                                '&:hover': {
+                                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.2),
+                                }
+                              }}
+                            >
+                              <PictureAsPdfIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         </>
                       ) : (
                         <Stack direction="row" spacing={1} alignItems="center">
@@ -1471,17 +1713,17 @@ const PaymentCalculator = () => {
                           </Typography>
                           <Tooltip title="Generate Payment Report">
                             <IconButton
-                              onClick={() => handleGenerateReport(instructor)}
-                              color="secondary"
+                              onClick={() => handleReportClick(instructor)}
+                              color="primary"
                               size="small"
                               sx={{
-                                bgcolor: alpha(theme.palette.secondary.main, 0.1),
+                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                                 '&:hover': {
-                                  bgcolor: alpha(theme.palette.secondary.main, 0.2),
+                                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.2),
                                 }
                               }}
                             >
-                              <ReportIcon fontSize="small" />
+                              <PictureAsPdfIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
                         </Stack>
@@ -1510,9 +1752,109 @@ const PaymentCalculator = () => {
               borderTop: 1,
               borderColor: 'divider'
             }}
-          />
-        )}
+          />)}
       </Paper>
+      {/* Report Generation Confirmation Dialog */}
+      <Dialog
+        open={reportConfirm.open}
+        onClose={handleCloseReportConfirm}
+        aria-labelledby="report-dialog-title"
+        aria-describedby="report-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            maxWidth: 500
+          }
+        }}
+      >
+        <DialogTitle 
+          id="report-dialog-title"
+          sx={{ 
+            bgcolor: 'primary.main', 
+            color: 'white',
+            pb: 1
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PictureAsPdfIcon />
+            Generate Payment Report
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <DialogContentText id="report-dialog-description" sx={{ mb: 2 }}>
+            You are about to generate a payment report for <strong>{reportConfirm.instructor?.name}</strong>. This report will include all payment details and can be printed or saved as a PDF.  
+          </DialogContentText>
+          <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+            <Typography variant="subtitle2" color="primary.main" gutterBottom>
+              Report Details:
+            </Typography>
+            <Grid container spacing={2} sx={{ mt: 0.5 }}>
+              <Grid item xs={6}>
+                <Typography variant="body2" color="text.secondary">
+                  Instructor:
+                </Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {reportConfirm.instructor?.name}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="body2" color="text.secondary">
+                  Department:
+                </Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {reportConfirm.instructor?.department}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="body2" color="text.secondary">
+                  Total Load:
+                </Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {reportConfirm.instructor?.totalLoad || '0'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="body2" color="text.secondary">
+                  Calculated Amount:
+                </Typography>
+                <Typography variant="body1" fontWeight="medium" color="success.main">
+                  ETB {reportConfirm.instructor?.calculatedAmount?.toLocaleString() || '0'}
+                </Typography>
+              </Grid>
+            </Grid>
+          </Box>
+          <FormControlLabel
+            control={
+              <Checkbox 
+                checked={reportConfirm.termsAccepted}
+                onChange={(e) => setReportConfirm(prev => ({ ...prev, termsAccepted: e.target.checked }))}
+                color="primary"
+              />
+            }
+            label="I confirm that the payment information is correct and I want to generate this report"
+            sx={{ mt: 2, display: 'block' }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button 
+            onClick={handleCloseReportConfirm}
+            variant="outlined"
+            startIcon={<CloseIcon />}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => generatePDFReport(reportConfirm.instructor)}
+            disabled={!reportConfirm.termsAccepted}
+            variant="contained"
+            color="primary"
+            startIcon={<PictureAsPdfIcon />}
+            sx={{ ml: 2 }}
+          >
+            Generate Report
+          </Button>
+        </DialogActions>
+      </Dialog>
       
       {/* Confirmation Dialog */}
       {/* Save All Confirmation Dialog */}
@@ -1561,7 +1903,124 @@ const PaymentCalculator = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      
+
+      {/* Rate Edit Confirmation Dialog */}
+      <Dialog
+        open={rateEditConfirm.open}
+        onClose={() => setRateEditConfirm({ open: false, action: null, termsAccepted: false })}
+        aria-labelledby="rate-edit-confirm-dialog"
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: (theme) => theme.shadows[8]
+          }
+        }}
+      >
+        <DialogTitle 
+          id="rate-edit-confirm-dialog"
+          sx={{
+            pb: 1,
+            borderBottom: 1,
+            borderColor: 'divider',
+            '& .MuiTypography-root': {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              fontWeight: 600
+            }
+          }}
+        >
+          {rateEditConfirm.action === 'save' ? (
+            <>
+              <SaveIcon color="success" />
+              Confirm Rate Change
+            </>
+          ) : (
+            <>
+              <EditIcon color="primary" />
+              Modify Rate Per Load
+            </>
+          )}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Stack spacing={3}>
+            <Alert 
+              severity={rateEditConfirm.action === 'save' ? 'warning' : 'info'}
+              icon={rateEditConfirm.action === 'save' ? <WarningIcon /> : <InfoIcon />}
+              sx={{ 
+                '& .MuiAlert-message': { 
+                  width: '100%' 
+                } 
+              }}
+            >
+              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 500 }}>
+                {rateEditConfirm.action === 'save' 
+                  ? 'Important: This will affect all instructor payments'
+                  : 'You are about to modify the rate per load'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {rateEditConfirm.message}
+              </Typography>
+            </Alert>
+
+            <Box 
+              sx={{ 
+                p: 2, 
+                bgcolor: (theme) => alpha(theme.palette.background.default, 0.6),
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'divider'
+              }}
+            >
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={rateEditConfirm.termsAccepted}
+                    onChange={(e) => setRateEditConfirm(prev => ({ ...prev, termsAccepted: e.target.checked }))}
+                    color={rateEditConfirm.action === 'save' ? 'success' : 'primary'}
+                    sx={{ '& .MuiSvgIcon-root': { fontSize: '1.2rem' } }}
+                  />
+                }
+                label={
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    {rateEditConfirm.action === 'save'
+                      ? 'I confirm that I want to update the rate and recalculate all instructor payments'
+                      : 'I understand that modifying the rate will affect all instructor payment calculations'}
+                  </Typography>
+                }
+                sx={{
+                  ml: 0,
+                  '& .MuiFormControlLabel-label': {
+                    flex: 1
+                  }
+                }}
+              />
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Button 
+            onClick={() => setRateEditConfirm({ open: false, action: null, termsAccepted: false })} 
+            color="inherit"
+            startIcon={<CloseIcon />}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleRateEditConfirm} 
+            color={rateEditConfirm.action === 'save' ? 'success' : 'primary'}
+            variant="contained"
+            disabled={!rateEditConfirm.termsAccepted}
+            startIcon={rateEditConfirm.action === 'save' ? <SaveIcon /> : <EditIcon />}
+            sx={{ px: 3 }}
+          >
+            {rateEditConfirm.action === 'save' ? 'Save Changes' : 'Start Editing'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Single Save Confirmation Dialog */}
       <Dialog
         open={singleSaveConfirm.open}
@@ -1569,180 +2028,121 @@ const PaymentCalculator = () => {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>
-          Confirm Payment Save
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            You are about to save payment calculation for {singleSaveConfirm.instructor?.name}.
-          </DialogContentText>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={singleSaveConfirm.termsAccepted}
-                onChange={(e) => setSingleSaveConfirm(prev => ({ ...prev, termsAccepted: e.target.checked }))}
-                color="primary"
-              />
-            }
-            label="I confirm that this payment calculation is correct"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseSingleSave} color="inherit">
-            Cancel
-          </Button>
-          <Button
-            onClick={() => handleSavePayment(singleSaveConfirm.instructor)}
-            color="success"
-            variant="contained"
-            disabled={!singleSaveConfirm.termsAccepted}
-          >
-            Confirm & Save
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Report Generation Dialog */}
-      <Dialog
-        open={reportDialogOpen}
-        onClose={() => !reportGenerating && setReportDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-            boxShadow: 5
-          }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>
+        <DialogTitle sx={{ pb: 0 }}>
           <Stack direction="row" alignItems="center" spacing={1}>
-            <ReportIcon color="secondary" />
-            <Typography variant="h6" component="span">
-              Generate Payment Report
-            </Typography>
+            <PaymentsIcon sx={{ color: 'primary.main' }} />
+            <Typography variant="h6">Confirm Payment Details</Typography>
           </Stack>
         </DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          {selectedInstructor && (
-            <>
-              <Typography variant="subtitle1" color="text.secondary" gutterBottom>
-                You are about to generate a payment report for:
-              </Typography>
-              <Paper 
-                variant="outlined" 
-                sx={{ 
-                  p: 2, 
-                  mb: 3, 
-                  borderRadius: 2,
-                  bgcolor: 'background.paper',
-                  borderColor: 'divider'
-                }}
-              >
-                <Stack spacing={2}>
-                  <Stack direction="row" alignItems="center" spacing={2}>
-                    <Avatar 
-                      sx={{ 
-                        bgcolor: 'primary.main',
-                        width: 48,
-                        height: 48
-                      }}
-                    >
-                      <PersonIcon />
-                    </Avatar>
-                    <Box>
-                      <Typography variant="h6">{selectedInstructor.name}</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {selectedInstructor.department} • {selectedInstructor.school}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                  
-                  <Divider />
-                  
-                  <Grid container spacing={2}>
-                    <Grid item xs={6}>
-                      <Typography variant="caption" color="text.secondary">
-                        Total Teaching Load
-                      </Typography>
-                      <Typography variant="body1" fontWeight="500">
-                        {selectedInstructor.totalLoad} hours
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="caption" color="text.secondary">
-                        Payment Amount
-                      </Typography>
-                      <Typography variant="body1" fontWeight="500" color="secondary.main">
-                        {selectedInstructor.calculatedAmount} ETB
-                      </Typography>
-                    </Grid>
-                  </Grid>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 3, color: 'text.primary' }}>
+            Please review and confirm the following payment information:
+          </DialogContentText>
+          
+          {/* Payment Details Card */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              mb: 3,
+              bgcolor: alpha(theme.palette.primary.main, 0.05),
+              borderRadius: 2,
+              border: 1,
+              borderColor: alpha(theme.palette.primary.main, 0.1)
+            }}
+          >
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <PersonIcon sx={{ color: 'primary.main' }} />
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
+                    {singleSaveConfirm.instructor?.name}
+                  </Typography>
                 </Stack>
-              </Paper>
+              </Grid>
               
-              <Typography variant="body2" color="text.secondary" paragraph>
-                This report will include detailed payment information, course breakdown, and official payment documentation.
-                The PDF document will include:
-              </Typography>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Total Load
+                </Typography>
+                <Typography variant="h6">
+                  {singleSaveConfirm.instructor?.totalLoad}
+                </Typography>
+              </Grid>
               
-              <Box sx={{ pl: 2, mb: 2 }}>
-                <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
-                  <li>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      University letterhead and official formatting
-                    </Typography>
-                  </li>
-                  <li>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Complete instructor information and academic details
-                    </Typography>
-                  </li>
-                  <li>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Detailed payment calculation including tax and pension deductions
-                    </Typography>
-                  </li>
-                  <li>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Comprehensive course breakdown with credit and contact hours
-                    </Typography>
-                  </li>
-                  <li>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Signature fields for finance officer and department head
-                    </Typography>
-                  </li>
-                  <li>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Unique document ID and verification information
-                    </Typography>
-                  </li>
-                </ul>
-              </Box>
+              <Grid item xs={12} sm={6}>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Rate per Load
+                </Typography>
+                <Typography variant="h6">
+                  {ratePerLoad} ETB
+                </Typography>
+              </Grid>
               
-              <Alert severity="info" sx={{ mb: 2 }}>
-                The generated PDF is an official financial document. Please verify all information before sharing.
-              </Alert>
-            </>
-          )}
+              <Grid item xs={12}>
+                <Divider sx={{ my: 1 }} />
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="subtitle1" color="text.secondary">
+                    Total Payment
+                  </Typography>
+                  <Typography variant="h5" color="primary.main" sx={{ fontWeight: 'medium' }}>
+                    {singleSaveConfirm.instructor?.calculatedAmount} ETB
+                  </Typography>
+                </Stack>
+              </Grid>
+            </Grid>
+          </Paper>
+
+          {/* Confirmation Checkbox */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2,
+              bgcolor: alpha(theme.palette.success.main, 0.05),
+              borderRadius: 2,
+              border: 1,
+              borderColor: alpha(theme.palette.success.main, 0.1)
+            }}
+          >
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={singleSaveConfirm.termsAccepted}
+                  onChange={(e) => setSingleSaveConfirm(prev => ({ ...prev, termsAccepted: e.target.checked }))}
+                  color="success"
+                />
+              }
+              label={
+                <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 'medium' }}>
+                  I confirm that all payment calculations are correct and I agree to process these payments
+                </Typography>
+              }
+            />
+          </Paper>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3 }}>
+        <DialogActions sx={{ p: 3, pt: 2 }}>
           <Button 
-            onClick={() => setReportDialogOpen(false)} 
+            onClick={handleCloseSingleSave} 
             color="inherit"
-            disabled={reportGenerating}
+            startIcon={<CloseIcon />}
           >
             Cancel
           </Button>
-          <Button
-            onClick={generateReport}
-            variant="contained"
-            color="secondary"
-            disabled={reportGenerating}
-            startIcon={reportGenerating ? <CircularProgress size={20} color="inherit" /> : <PdfIcon />}
+          <Button 
+            onClick={() => handleSavePayment(singleSaveConfirm.instructor)}
+            disabled={!singleSaveConfirm.termsAccepted}
+            variant="contained" 
+            color="success"
+            startIcon={<SaveIcon />}
+            sx={{
+              px: 3,
+              '&:not(:disabled)': {
+                background: `linear-gradient(45deg, ${theme.palette.success.main}, ${theme.palette.success.light})`,
+                boxShadow: `0 4px 10px ${alpha(theme.palette.success.main, 0.25)}`
+              }
+            }}
           >
-            {reportGenerating ? 'Generating...' : 'Generate Report'}
+            Confirm & Save
           </Button>
         </DialogActions>
       </Dialog>

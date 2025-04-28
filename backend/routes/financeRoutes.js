@@ -6,6 +6,11 @@ const router = express.Router();
 
 // Protect all routes after this middleware
 router.use(authController.protect);
+
+// Special route for instructors to view their own payments - must be before the finance restriction
+router.get('/instructors/:instructorId/payments', financeController.getInstructorPayments);
+
+// Restrict remaining routes to finance roles only
 router.use(authController.restrictTo('finance'));
 
 // Dashboard routes
@@ -17,6 +22,5 @@ router.patch('/courses/:id/review', financeController.reviewCourseByFinance);
 
 // Payment routes
 router.post('/instructors/:instructorId/payments', financeController.handlePayment);
-router.get('/instructors/:instructorId/payments', financeController.getInstructorPayments);
 
 module.exports = router;

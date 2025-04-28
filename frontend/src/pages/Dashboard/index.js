@@ -21,7 +21,8 @@ import {
   Chip,
   LinearProgress,
   Badge,
-  alpha
+  alpha,
+  Button
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SchoolIcon from '@mui/icons-material/School';
@@ -34,8 +35,9 @@ import PersonIcon from '@mui/icons-material/Person';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import InfoIcon from '@mui/icons-material/Info';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import PaymentIcon from '@mui/icons-material/Payment';
+import ReceiptIcon from '@mui/icons-material/Receipt';
+import axios from 'axios';
 import { getMyCourses } from '../../store/courseSlice';
 
 const Dashboard = () => {
@@ -43,24 +45,128 @@ const Dashboard = () => {
   const { user } = useSelector((state) => state.auth);
   const { myCourses, myCoursesLoading } = useSelector((state) => state.course);
   const [expandedCourse, setExpandedCourse] = useState(null);
-  
-  // Mock payment data - in a real app, this would come from the finance API
-  const [paymentCalculated, setPaymentCalculated] = useState(true); // Toggle this to test both states
-  const [paymentData, setPaymentData] = useState({
-    totalAmount: 45000,
-    ratePerCreditHour: 1500,
-    totalCreditHours: 30,
-    calculatedAt: new Date().toISOString(),
-    status: 'approved'
-  });
+  const [paymentInfo, setPaymentInfo] = useState(null);
+  const [loadingPayment, setLoadingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState(null);
   
   const handleCourseExpand = (courseId) => {
     setExpandedCourse(expandedCourse === courseId ? null : courseId);
   };
 
+  // Fetch instructor payment information
+  const fetchPaymentInfo = async () => {
+    if (!user || user.role !== 'instructor') return;
+    
+    try {
+      setLoadingPayment(true);
+      setPaymentError(null);
+      const token = localStorage.getItem('token');
+      
+      // Get current academic year and semester
+      const currentDate = new Date();
+      const academicYear = currentDate.getFullYear().toString();
+      const month = currentDate.getMonth() + 1; // JavaScript months are 0-indexed
+      const semester = month >= 9 && month <= 2 ? 'First' : 'Second'; // Simplified logic
+      
+      // First try to get payment from finance endpoint
+      try {
+        const response = await axios.get(
+          `/api/v1/finance/instructors/${user._id}/payments?academicYear=${academicYear}&semester=${semester}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json'
+            }
+          }
+        );
+        
+        if (response.data.data.payment) {
+          setPaymentInfo(response.data.data.payment);
+          setLoadingPayment(false);
+          return;
+        }
+      } catch (financeError) {
+        console.log('Could not access payment directly, calculating from courses...');
+        // Don't set an error here, we'll try the fallback approach
+      }
+      
+      // If no payment record exists, calculate from courses
+      try {
+        // Get all courses with any approval status
+        const coursesResponse = await axios.get(
+          `/api/v1/courses?instructor=${user._id}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json'
+            }
+          }
+        );
+        
+        // Filter for approved courses with any approval status
+        const approvedStatuses = [
+          'approved', 
+          'dean-approved', 
+          'vice-director-approved', 
+          'scientific-director-approved', 
+          'finance-approved'
+        ];
+        
+        // Filter the courses to only include approved ones
+        if (coursesResponse.data.data) {
+          coursesResponse.data.data = coursesResponse.data.data.filter(course => 
+            approvedStatuses.includes(course.status)
+          );
+        }
+        
+        if (coursesResponse.data.data && coursesResponse.data.data.length > 0) {
+          // Calculate total load using the same logic as in PaymentCalculator
+          const totalLoad = coursesResponse.data.data.reduce((sum, course) => {
+            const creditHours = course.creditHours || 0;
+            const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
+            const labLoad = (course.Hourfor?.lab || 0) * (course.Number_of_Sections?.lab || 0);
+            const tutorialLoad = (course.Hourfor?.tutorial || 0) * (course.Number_of_Sections?.tutorial || 0);
+            
+            return sum + creditHours + lectureLoad + labLoad + tutorialLoad;
+          }, 0);
+          
+          // Use a default rate per load
+          const defaultRate = 500;
+          
+          // Create payment info based on calculated load
+          setPaymentInfo({
+            totalLoad: totalLoad,
+            paymentAmount: defaultRate,
+            totalPayment: Math.round((totalLoad * defaultRate) * 100) / 100,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            isEstimated: true // Flag to indicate this is an estimated payment
+          });
+          setLoadingPayment(false);
+          return;
+        } else {
+          // No courses found
+          setPaymentError('No approved courses found to calculate payment');
+          setLoadingPayment(false);
+          return;
+        }
+      } catch (coursesError) {
+        console.error('Error fetching courses:', coursesError);
+        setPaymentError('Could not retrieve course information');
+        setLoadingPayment(false);
+        return;
+      }
+    } catch (error) {
+      console.error('Error fetching payment info:', error);
+      setPaymentError('Failed to load payment information');
+      setLoadingPayment(false);
+    }
+  };
+
   useEffect(() => {
     if (user?.role === 'instructor') {
       dispatch(getMyCourses());
+      fetchPaymentInfo();
     }
   }, [dispatch, user?.role]);
 
@@ -450,78 +556,109 @@ const Dashboard = () => {
                         borderRadius: 2,
                         height: '100%',
                         transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                        background: (theme) => paymentCalculated 
-                          ? `linear-gradient(135deg, ${alpha(theme.palette.secondary.light, 0.2)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`
-                          : `linear-gradient(135deg, ${alpha(theme.palette.grey[400], 0.2)} 0%, ${alpha(theme.palette.grey[500], 0.1)} 100%)`,
+                        background: (theme) => `linear-gradient(135deg, ${alpha(theme.palette.secondary.light, 0.2)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`,
                         border: '1px solid',
-                        borderColor: paymentCalculated ? 'secondary.light' : 'grey.400',
-                        animation: 'fadeInDown 0.8s ease-out 0.6s both',
-                        '@keyframes fadeInDown': {
-                          '0%': { opacity: 0, transform: 'translateY(-30px)' },
-                          '100%': { opacity: 1, transform: 'translateY(0)' }
+                        borderColor: 'secondary.light',
+                        animation: 'fadeInRight 0.8s ease-out 0.4s both',
+                        '@keyframes fadeInRight': {
+                          '0%': { opacity: 0, transform: 'translateX(30px)' },
+                          '100%': { opacity: 1, transform: 'translateX(0)' }
                         },
                         '&:hover': { 
                           transform: 'translateY(-8px) scale(1.03)',
                           boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-                          borderColor: paymentCalculated ? 'secondary.main' : 'grey.500'
+                          borderColor: 'secondary.main'
                         }
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
                         <Avatar 
                           sx={{ 
-                            bgcolor: paymentCalculated ? 'secondary.main' : 'grey.500', 
+                            bgcolor: 'secondary.main', 
                             width: 40, 
                             height: 40,
                             mr: 1.5 
                           }}
                         >
-                          {paymentCalculated ? <MonetizationOnIcon /> : <WarningAmberIcon />}
+                          <PaymentIcon />
                         </Avatar>
-                        <Typography variant="subtitle1" fontWeight="600" color={paymentCalculated ? 'secondary.dark' : 'text.secondary'}>
-                          {paymentCalculated ? 'Payment Amount' : 'Payment Status'}
+                        <Typography variant="subtitle1" fontWeight="600" color="secondary.dark">
+                          Payment Status
                         </Typography>
                       </Box>
                       
-                      {paymentCalculated ? (
+                      {loadingPayment ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '70%' }}>
+                          <CircularProgress size={30} color="secondary" sx={{ mb: 1 }} />
+                          <Typography variant="caption" color="text.secondary">
+                            Loading payment...
+                          </Typography>
+                        </Box>
+                      ) : paymentError ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '70%' }}>
+                          <Typography variant="body2" color="error" sx={{ textAlign: 'center', mb: 1 }}>
+                            {paymentError}
+                          </Typography>
+                          <Button 
+                            variant="outlined" 
+                            color="secondary" 
+                            size="small" 
+                            onClick={fetchPaymentInfo}
+                            sx={{ mt: 1, fontSize: '0.75rem' }}
+                          >
+                            Retry
+                          </Button>
+                        </Box>
+                      ) : paymentInfo ? (
                         <>
                           <Typography variant="h3" fontWeight="700" color="secondary.dark" sx={{ ml: 1 }}>
-                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'ETB', maximumFractionDigits: 0 }).format(paymentData.totalAmount)}
+                            {paymentInfo.totalPayment ? `${paymentInfo.totalPayment.toLocaleString()} ETB` : 'Pending'}
                           </Typography>
                           <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center' }}>
-                            <Tooltip title={`Calculated on ${new Date(paymentData.calculatedAt).toLocaleDateString()}`}>
+                            <Tooltip title={`Payment ${paymentInfo.status === 'estimated' || paymentInfo.isEstimated ? 'estimated' : (paymentInfo.status || 'pending')}`}>
                               <InfoIcon sx={{ fontSize: 16, color: 'secondary.main', mr: 0.5 }} />
                             </Tooltip>
                             <Typography variant="body2" color="text.secondary">
-                              {paymentData.ratePerCreditHour} ETB per credit hour
+                              {paymentInfo.status === 'calculated' ? 'Payment calculated' : 
+                               paymentInfo.status === 'pending' ? 'Payment pending approval' : 
+                               paymentInfo.status === 'approved' ? 'Payment approved' : 
+                               paymentInfo.status === 'estimated' ? 'Estimated payment' : 
+                               paymentInfo.isEstimated ? 'Estimated payment' : 'Payment status unknown'}
                             </Typography>
                           </Box>
+                          <Box sx={{ mt: 2 }}>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                              Total Load: <strong>{paymentInfo.totalLoad || 0} hrs</strong>
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                              Rate per Load: <strong>ETB {paymentInfo.paymentAmount || 0}</strong>
+                            </Typography>
+                          </Box>
+                          {paymentInfo.createdAt && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                              {(paymentInfo.status === 'pending' && !paymentInfo._id) || 
+                               paymentInfo.status === 'estimated' || 
+                               paymentInfo.isEstimated ? 
+                                'Estimated payment (not yet saved)' : 
+                                `Last updated: ${new Date(paymentInfo.createdAt).toLocaleDateString()}`}
+                            </Typography>
+                          )}
                         </>
                       ) : (
-                        <>
-                          <Box sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            p: 2,
-                            borderRadius: 1,
-                            bgcolor: (theme) => alpha(theme.palette.warning.light, 0.1),
-                            border: '1px dashed',
-                            borderColor: 'warning.light',
-                            mx: 1,
-                            mt: 1
-                          }}>
-                            <WarningAmberIcon sx={{ color: 'warning.main', mr: 1 }} />
-                            <Typography variant="body1" fontWeight="500" color="warning.main">
-                              Not Yet Calculated
-                            </Typography>
-                          </Box>
-                          <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography variant="body2" color="text.secondary" align="center">
-                              Finance department will calculate your payment soon
-                            </Typography>
-                          </Box>
-                        </>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '70%' }}>
+                          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                            No payment information available yet
+                          </Typography>
+                          <Button 
+                            variant="outlined" 
+                            color="secondary" 
+                            size="small" 
+                            onClick={fetchPaymentInfo}
+                            sx={{ mt: 2, fontSize: '0.75rem' }}
+                          >
+                            Refresh
+                          </Button>
+                        </Box>
                       )}
                     </Paper>
                   </Grid>
