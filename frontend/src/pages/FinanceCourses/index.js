@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import {
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { 
   Container,
   Paper,
   Typography,
@@ -249,15 +251,12 @@ const FinanceCourses = () => {
     setSelectedCourse(course);
     // Get instructor hours
     const instructorId = course.instructor?._id;
-    console.log('Course instructor:', course.instructor);
-    console.log('Instructor ID:', instructorId);
-    console.log('Available instructor hours:', instructorHours);
+   
     const hours = instructorHours[instructorId] || {
       hdpHour: 0,
       positionHour: 0,
       batchAdvisor: 0
     };
-    console.log('Selected hours for instructor:', hours);
 
     // If there's existing payment data, load it
     if (course.payment) {
@@ -321,7 +320,6 @@ const FinanceCourses = () => {
 
   const handleReviewSubmit = async (courseId, status, reason = '') => {
     try {
-      console.log('Submitting review for course:', courseId, 'with status:', status);
       
       const response = await fetch(
         `${baseURL}/api/v1/finance/courses/${courseId}/review`,
@@ -344,7 +342,7 @@ const FinanceCourses = () => {
       }
 
       const data = await response.json();
-      console.log('Review response:', data);
+      
 
       if (data.status !== 'success') {
         throw new Error(data.message || 'Failed to update course status');
@@ -458,54 +456,118 @@ const FinanceCourses = () => {
     setPage(newPage);
   };
 
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
+
   return (
-    <Container maxWidth="xl" sx={{ py: 4, px: { xs: 2, sm: 3 } }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography 
-          variant="h4" 
-          component="h1" 
-          sx={{ 
-            fontWeight: 600,
-            color: (theme) => theme.palette.grey[800],
-            mb: 1
-          }}
-        >
-          Course Management
-        </Typography>
-        <Typography 
-          variant="body1" 
-          color="text.secondary"
-          sx={{ maxWidth: 'md', mb: 3 }}
-        >
-          Manage and review course assignments, credit hours, and approvals for all instructors
-        </Typography>
+    <Container 
+      maxWidth="xl" 
+      sx={{ 
+        py: { xs: 2, sm: 3, md: 4 }, 
+        px: { xs: 1.5, sm: 2, md: 3 },
+      }}
+    >
+      <Fade in={true} timeout={800}>
+        <Box>
+          <Box sx={{ mb: { xs: 2, sm: 3, md: 4 } }}>
+            <Stack 
+              direction={{ xs: 'column', sm: 'row' }} 
+              alignItems={{ xs: 'flex-start', sm: 'center' }}
+              spacing={2}
+              sx={{ 
+                mb: 2,
+                pb: 2,
+                borderBottom: 1,
+                borderColor: 'divider'
+              }}
+            >
+              <CalculateIcon 
+                sx={{ 
+                  fontSize: { xs: 24, sm: 30, md: 36 },
+                  background: (theme) => `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.primary.light})`,
+                  borderRadius: '50%',
+                  padding: 1,
+                  color: 'white',
+                  boxShadow: 2
+                }} 
+              />
+              <Typography 
+                variant="h4" 
+                component="h1" 
+                sx={{ 
+                  fontWeight: 600,
+                  color: (theme) => theme.palette.grey[800],
+                  fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2rem' }
+                }}
+              >
+                Course Management
+              </Typography>
+            </Stack>
+            <Typography 
+              variant="body1" 
+              color="text.secondary"
+              sx={{ 
+                maxWidth: 'md', 
+                mb: { xs: 2, sm: 3 },
+                fontSize: { xs: '0.875rem', sm: '1rem' }
+              }}
+            >
+              Manage and review course assignments, credit hours, and approvals for all instructors
+            </Typography>
 
         {/* Search and Filter Bar */}
-        <Paper sx={{ p: 2, mb: 3 }} elevation={1}>
-          <Grid container spacing={2} alignItems="center">
+        <Paper 
+          sx={{ 
+            p: { xs: 1.5, sm: 2 }, 
+            mb: { xs: 2, sm: 3 },
+            borderRadius: 2,
+            boxShadow: theme => theme.shadows[isMobile ? 1 : 2],
+            transition: 'box-shadow 0.3s ease',
+            '&:hover': {
+              boxShadow: theme => theme.shadows[isMobile ? 2 : 3]
+            }
+          }} 
+          elevation={1}
+        >
+          <Grid container spacing={{ xs: 1.5, sm: 2 }} alignItems="center">
             <Grid item xs={12} sm={6} md={4}>
               <TextField
                 fullWidth
-                placeholder="Search by course code, title, or instructor..."
+                placeholder={isMobile ? "Search courses..." : "Search by course code, title, or instructor..."}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      <SearchIcon color="action" />
+                      <SearchIcon color="primary" />
                     </InputAdornment>
                   )
                 }}
                 size="small"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                    '&:hover fieldset': {
+                      borderColor: theme => theme.palette.primary.light,
+                    },
+                  },
+                }}
               />
             </Grid>
-            <Grid item xs={12} sm={6} md={2.5}>
+            <Grid item xs={6} sm={6} md={2.5}>
               <FormControl fullWidth size="small">
                 <InputLabel>Status</InputLabel>
                 <Select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
                   label="Status"
+                  sx={{
+                    borderRadius: 2,
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: theme => theme.palette.primary.light,
+                    },
+                  }}
                 >
                   <MenuItem value="all">All Status</MenuItem>
                   <MenuItem value="scientific-director-approved">Pending Review</MenuItem>
@@ -514,7 +576,7 @@ const FinanceCourses = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={6} md={2.5}>
+            <Grid item xs={6} sm={6} md={2.5}>
               <FormControl fullWidth size="small">
                 <InputLabel>School</InputLabel>
                 <Select
@@ -524,6 +586,12 @@ const FinanceCourses = () => {
                     setFilterDepartment('all'); // Reset department when school changes
                   }}
                   label="School"
+                  sx={{
+                    borderRadius: 2,
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: theme => theme.palette.primary.light,
+                    },
+                  }}
                 >
                   <MenuItem value="all">All Schools</MenuItem>
                   {schools.map(school => (
@@ -532,13 +600,19 @@ const FinanceCourses = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={6} md={2.5}>
+            <Grid item xs={6} sm={6} md={2.5}>
               <FormControl fullWidth size="small">
                 <InputLabel>Department</InputLabel>
                 <Select
                   value={filterDepartment}
                   onChange={(e) => setFilterDepartment(e.target.value)}
                   label="Department"
+                  sx={{
+                    borderRadius: 2,
+                    '&:hover .MuiOutlinedInput-notchedOutline': {
+                      borderColor: theme => theme.palette.primary.light,
+                    },
+                  }}
                 >
                   <MenuItem value="all">All Departments</MenuItem>
                   {departments.map(dept => (
@@ -609,11 +683,15 @@ const FinanceCourses = () => {
                     onClick={() => setExpandedInstructor(expandedInstructor === instructorId ? null : instructorId)}
                     sx={{
                       cursor: 'pointer',
-                      bgcolor: expandedInstructor === instructorId ? (theme) => theme.palette.action.hover : 'inherit',
+                      bgcolor: expandedInstructor === instructorId ? (theme) => alpha(theme.palette.primary.main, 0.05) : 'inherit',
                       '&:hover': {
-                        bgcolor: (theme) => theme.palette.action.hover
+                        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05)
                       },
-                      transition: 'background-color 0.2s ease'
+                      transition: 'background-color 0.2s ease',
+                      '& td': {
+                        fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                        padding: { xs: '8px 6px', sm: '16px' }
+                      }
                     }}
                   >
                     <TableCell>
@@ -673,8 +751,12 @@ const FinanceCourses = () => {
                         </IconButton>
                       </Stack>
                     </TableCell>
-                    <TableCell>{instructor.school}</TableCell>
-                    <TableCell>{instructor.department || 'N/A'}</TableCell>
+                    {!isMobile && (
+                      <>
+                        <TableCell>{instructor.school}</TableCell>
+                        <TableCell>{instructor.department || 'N/A'}</TableCell>
+                      </>
+                    )}
                     <TableCell>
                       {(() => {
                         // Calculate course load
@@ -1279,6 +1361,14 @@ Please provide a detailed reason for returning these courses:`
         onClose={() => setPaymentDialogOpen(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: 24,
+            px: { xs: 1, sm: 2 },
+            py: { xs: 1, sm: 1.5 }
+          }
+        }}
       >
         <DialogTitle>
           Calculate Payment - {selectedCourse?.code}
@@ -1529,6 +1619,8 @@ Please provide a detailed reason for returning these courses:`
           </Button>
         </DialogActions>
       </Dialog>
+          </Box>
+        </Fade>
     </Container>
   );
 };

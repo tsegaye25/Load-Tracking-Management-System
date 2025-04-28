@@ -7,11 +7,34 @@ const router = express.Router();
 // Protect all routes after this middleware
 router.use(authController.protect);
 
-// Special route for instructors to view their own payments - must be before the finance restriction
-router.get('/instructors/:instructorId/payments', financeController.getInstructorPayments);
+// Create a custom middleware to check if user is finance or the instructor accessing their own data
+const restrictToFinanceOrSelf = (req, res, next) => {
+  // Allow finance users to access everything
+  if (req.user.role === 'finance') {
+    return next();
+  }
+  
+  // Allow instructors to access only their own payment data
+  if (req.user.role === 'instructor' && req.params.instructorId === req.user._id.toString()) {
+    return next();
+  }
+  
+  // Otherwise, deny access
+  return res.status(403).json({
+    status: 'fail',
+    message: 'You do not have permission to perform this action'
+  });
+};
 
-// Restrict remaining routes to finance roles only
-router.use(authController.restrictTo('finance'));
+// Routes that only finance can access
+router.use(
+  [
+    '/dashboard',
+    '/courses',
+    '/courses/:id/review'
+  ],
+  authController.restrictTo('finance')
+);
 
 // Dashboard routes
 router.get('/dashboard', financeController.getFinanceDashboardStats);
@@ -20,7 +43,8 @@ router.get('/dashboard', financeController.getFinanceDashboardStats);
 router.get('/courses', financeController.getFinanceCourses);
 router.patch('/courses/:id/review', financeController.reviewCourseByFinance);
 
-// Payment routes
-router.post('/instructors/:instructorId/payments', financeController.handlePayment);
+// Payment routes - accessible by finance and the instructor themselves
+router.post('/instructors/:instructorId/payments', authController.restrictTo('finance'), financeController.handlePayment);
+router.get('/instructors/:instructorId/payments', restrictToFinanceOrSelf, financeController.getInstructorPayments);
 
 module.exports = router;

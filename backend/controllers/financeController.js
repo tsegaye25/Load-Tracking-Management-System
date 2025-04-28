@@ -337,6 +337,52 @@ exports.reviewCourseByFinance = catchAsync(async (req, res, next) => {
 });
 
 // Handle instructor payment
+// Get payment information for an instructor
+exports.getInstructorPayments = catchAsync(async (req, res, next) => {
+  const { instructorId } = req.params;
+  const { academicYear, semester } = req.query;
+  
+  // Validate instructor ID
+  if (!instructorId) {
+    return next(new AppError('Instructor ID is required', 400));
+  }
+  
+  try {
+    // Find instructor
+    const instructor = await User.findById(instructorId);
+    if (!instructor) {
+      return next(new AppError('Instructor not found', 404));
+    }
+    
+    // Check if the user is the instructor or has finance role
+    const isOwnRecord = req.user.role === 'instructor' && req.user._id.toString() === instructorId;
+    const isFinance = req.user.role === 'finance';
+    
+    if (!isOwnRecord && !isFinance) {
+      return next(new AppError('You do not have permission to view this payment information', 403));
+    }
+    
+    // Find payment information
+    const query = { instructor: instructorId };
+    
+    // Add filters if provided
+    if (academicYear) query.academicYear = academicYear;
+    if (semester) query.semester = semester;
+    
+    const payment = await Payment.findOne(query);
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        payment: payment || null
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching instructor payment:', error);
+    return next(new AppError('Error fetching payment information', 500));
+  }
+});
+
 exports.handlePayment = catchAsync(async (req, res, next) => {
   const { totalLoad, paymentAmount, totalPayment, academicYear, semester } = req.body;
   const { instructorId } = req.params;
@@ -452,6 +498,29 @@ exports.handlePayment = catchAsync(async (req, res, next) => {
       } catch (createError) {
         return next(new AppError('Error creating payment: ' + createError.message, 500));
       }
+    }
+
+    // Send notification to instructor about payment
+    try {
+      const instructorUser = await User.findById(instructorId);
+      if (instructorUser && instructorUser.email) {
+        // Create notification for the instructor
+        await new Email().sendPaymentNotification({
+          email: instructorUser.email,
+          subject: 'Payment Calculation Notification',
+          name: instructorUser.name,
+          totalLoad,
+          paymentAmount,
+          totalPayment,
+          academicYear,
+          semester,
+          date: new Date().toLocaleDateString(),
+          isUpdate: payment.paymentHistory.length > 1
+        });
+      }
+    } catch (emailError) {
+      console.error('Error sending payment notification email:', emailError);
+      // Don't fail the request if email fails
     }
 
     res.status(200).json({
@@ -579,17 +648,6 @@ exports.getInstructorPayments = catchAsync(async (req, res, next) => {
   const { instructorId } = req.params;
   const { academicYear = new Date().getFullYear().toString(), semester = 'First' } = req.query;
 
-  // Check if user is authorized to view this payment information
-  const userIdStr = req.user._id.toString();
-  const instructorIdStr = instructorId.toString();
-  const isOwnPayment = userIdStr === instructorIdStr;
-  const isFinanceRole = ['admin', 'finance-admin', 'finance-officer', 'finance'].includes(req.user.role);
-  
-  // Allow instructors to view their own payment or finance roles to view any payment
-  if (!isOwnPayment && !isFinanceRole) {
-    return next(new AppError('You are not authorized to view this payment information', 403));
-  }
-
   // Find instructor
   const instructor = await User.findById(instructorId);
   if (!instructor) {
@@ -602,62 +660,6 @@ exports.getInstructorPayments = catchAsync(async (req, res, next) => {
     academicYear,
     semester
   });
-
-  // If no payment record exists but the instructor is viewing their own payment,
-  // calculate an estimated payment based on their courses
-  if (!payment && isOwnPayment) {
-    try {
-      // Get instructor's approved courses - check for all approval statuses
-      const courses = await Course.find({
-        instructor: instructorId,
-        status: { 
-          $in: [
-            'approved', 
-            'dean-approved', 
-            'vice-director-approved', 
-            'scientific-director-approved', 
-            'finance-approved'
-          ]
-        }
-      });
-
-      if (courses && courses.length > 0) {
-        // Calculate total load using the same logic as in the frontend
-        const totalLoad = courses.reduce((sum, course) => {
-          const creditHours = course.creditHours || 0;
-          const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
-          const labLoad = (course.Hourfor?.lab || 0) * (course.Number_of_Sections?.lab || 0);
-          const tutorialLoad = (course.Hourfor?.tutorial || 0) * (course.Number_of_Sections?.tutorial || 0);
-          
-          return sum + creditHours + lectureLoad + labLoad + tutorialLoad;
-        }, 0);
-
-        // Use a default rate per load
-        const defaultRate = 500;
-
-        // Return estimated payment information
-        return res.status(200).json({
-          status: 'success',
-          data: {
-            payment: {
-              instructor: instructorId,
-              totalLoad,
-              paymentAmount: defaultRate,
-              totalPayment: Math.round((totalLoad * defaultRate) * 100) / 100,
-              academicYear,
-              semester,
-              status: 'estimated',
-              isEstimated: true,
-              createdAt: new Date()
-            }
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Error calculating estimated payment:', error);
-      // Continue to return null payment if calculation fails
-    }
-  }
 
   res.status(200).json({
     status: 'success',

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import axios from 'axios';
 import {
   Container,
   Grid,
@@ -21,8 +22,7 @@ import {
   Chip,
   LinearProgress,
   Badge,
-  alpha,
-  Button
+  alpha
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SchoolIcon from '@mui/icons-material/School';
@@ -36,8 +36,9 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import InfoIcon from '@mui/icons-material/Info';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PaymentIcon from '@mui/icons-material/Payment';
-import ReceiptIcon from '@mui/icons-material/Receipt';
-import axios from 'axios';
+import DateRangeIcon from '@mui/icons-material/DateRange';
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { getMyCourses } from '../../store/courseSlice';
 
 const Dashboard = () => {
@@ -46,120 +47,59 @@ const Dashboard = () => {
   const { myCourses, myCoursesLoading } = useSelector((state) => state.course);
   const [expandedCourse, setExpandedCourse] = useState(null);
   const [paymentInfo, setPaymentInfo] = useState(null);
-  const [loadingPayment, setLoadingPayment] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   
   const handleCourseExpand = (courseId) => {
     setExpandedCourse(expandedCourse === courseId ? null : courseId);
   };
 
-  // Fetch instructor payment information
+  // Fetch payment information for the instructor
   const fetchPaymentInfo = async () => {
     if (!user || user.role !== 'instructor') return;
     
+    setPaymentLoading(true);
+    setPaymentError(null);
+    
     try {
-      setLoadingPayment(true);
-      setPaymentError(null);
       const token = localStorage.getItem('token');
+      const academicYear = new Date().getFullYear().toString();
+      const semester = 'First'; // TODO: Make this dynamic based on current semester
       
-      // Get current academic year and semester
-      const currentDate = new Date();
-      const academicYear = currentDate.getFullYear().toString();
-      const month = currentDate.getMonth() + 1; // JavaScript months are 0-indexed
-      const semester = month >= 9 && month <= 2 ? 'First' : 'Second'; // Simplified logic
-      
-      // First try to get payment from finance endpoint
-      try {
-        const response = await axios.get(
-          `/api/v1/finance/instructors/${user._id}/payments?academicYear=${academicYear}&semester=${semester}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Accept': 'application/json'
-            }
+      const response = await axios.get(
+        `/api/v1/finance/instructors/${user._id}/payments?academicYear=${academicYear}&semester=${semester}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
           }
-        );
-        
-        if (response.data.data.payment) {
-          setPaymentInfo(response.data.data.payment);
-          setLoadingPayment(false);
-          return;
         }
-      } catch (financeError) {
-        console.log('Could not access payment directly, calculating from courses...');
-        // Don't set an error here, we'll try the fallback approach
-      }
+      );
       
-      // If no payment record exists, calculate from courses
-      try {
-        // Get all courses with any approval status
-        const coursesResponse = await axios.get(
-          `/api/v1/courses?instructor=${user._id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Accept': 'application/json'
-            }
-          }
-        );
-        
-        // Filter for approved courses with any approval status
-        const approvedStatuses = [
-          'approved', 
-          'dean-approved', 
-          'vice-director-approved', 
-          'scientific-director-approved', 
-          'finance-approved'
-        ];
-        
-        // Filter the courses to only include approved ones
-        if (coursesResponse.data.data) {
-          coursesResponse.data.data = coursesResponse.data.data.filter(course => 
-            approvedStatuses.includes(course.status)
-          );
-        }
-        
-        if (coursesResponse.data.data && coursesResponse.data.data.length > 0) {
-          // Calculate total load using the same logic as in PaymentCalculator
-          const totalLoad = coursesResponse.data.data.reduce((sum, course) => {
-            const creditHours = course.creditHours || 0;
-            const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
-            const labLoad = (course.Hourfor?.lab || 0) * (course.Number_of_Sections?.lab || 0);
-            const tutorialLoad = (course.Hourfor?.tutorial || 0) * (course.Number_of_Sections?.tutorial || 0);
-            
-            return sum + creditHours + lectureLoad + labLoad + tutorialLoad;
-          }, 0);
-          
-          // Use a default rate per load
-          const defaultRate = 500;
-          
-          // Create payment info based on calculated load
-          setPaymentInfo({
-            totalLoad: totalLoad,
-            paymentAmount: defaultRate,
-            totalPayment: Math.round((totalLoad * defaultRate) * 100) / 100,
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-            isEstimated: true // Flag to indicate this is an estimated payment
-          });
-          setLoadingPayment(false);
-          return;
-        } else {
-          // No courses found
-          setPaymentError('No approved courses found to calculate payment');
-          setLoadingPayment(false);
-          return;
-        }
-      } catch (coursesError) {
-        console.error('Error fetching courses:', coursesError);
-        setPaymentError('Could not retrieve course information');
-        setLoadingPayment(false);
-        return;
+      if (response.data.status === 'success' && response.data.data.payment) {
+        setPaymentInfo(response.data.data.payment);
+      } else {
+        // No payment found but request was successful
+        setPaymentInfo(null);
       }
     } catch (error) {
-      console.error('Error fetching payment info:', error);
-      setPaymentError('Failed to load payment information');
-      setLoadingPayment(false);
+      console.error('Error fetching payment information:', error);
+      
+      // Handle specific error cases
+      if (error.response) {
+        if (error.response.status === 404) {
+          // No payment found - this is not an error, just no data yet
+          setPaymentInfo(null);
+          return;
+        } else if (error.response.status === 403) {
+          setPaymentError('You do not have permission to view payment information.');
+          return;
+        }
+      }
+      
+      // Generic error message for other errors
+      setPaymentError('Failed to load payment information. Please try again later.');
+    } finally {
+      setPaymentLoading(false);
     }
   };
 
@@ -308,6 +248,8 @@ const Dashboard = () => {
             </Card>
           </Grid>
         )}
+
+        
         {/* Welcome Section */}
         <Grid item xs={12}>
           <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
@@ -556,109 +498,186 @@ const Dashboard = () => {
                         borderRadius: 2,
                         height: '100%',
                         transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                        background: (theme) => `linear-gradient(135deg, ${alpha(theme.palette.secondary.light, 0.2)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`,
+                        background: (theme) => `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.2)} 0%, ${alpha(theme.palette.primary.main, 0.1)} 100%)`,
                         border: '1px solid',
-                        borderColor: 'secondary.light',
-                        animation: 'fadeInRight 0.8s ease-out 0.4s both',
-                        '@keyframes fadeInRight': {
-                          '0%': { opacity: 0, transform: 'translateX(30px)' },
-                          '100%': { opacity: 1, transform: 'translateX(0)' }
+                        borderColor: 'primary.light',
+                        animation: 'fadeInBottom 0.8s ease-out 0.6s both',
+                        '@keyframes fadeInBottom': {
+                          '0%': { opacity: 0, transform: 'translateY(30px)' },
+                          '100%': { opacity: 1, transform: 'translateY(0)' }
                         },
                         '&:hover': { 
                           transform: 'translateY(-8px) scale(1.03)',
                           boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-                          borderColor: 'secondary.main'
+                          borderColor: 'primary.main'
                         }
                       }}
                     >
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-                        <Avatar 
-                          sx={{ 
-                            bgcolor: 'secondary.main', 
-                            width: 40, 
-                            height: 40,
-                            mr: 1.5 
-                          }}
-                        >
-                          <PaymentIcon />
-                        </Avatar>
-                        <Typography variant="subtitle1" fontWeight="600" color="secondary.dark">
-                          Payment Status
-                        </Typography>
-                      </Box>
-                      
-                      {loadingPayment ? (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '70%' }}>
-                          <CircularProgress size={30} color="secondary" sx={{ mb: 1 }} />
-                          <Typography variant="caption" color="text.secondary">
+                      {paymentLoading ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                          <CircularProgress size={40} sx={{ mb: 2, color: 'primary.main' }} />
+                          <Typography variant="body2" color="text.secondary">
                             Loading payment...
                           </Typography>
                         </Box>
                       ) : paymentError ? (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '70%' }}>
-                          <Typography variant="body2" color="error" sx={{ textAlign: 'center', mb: 1 }}>
+                        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                            <Avatar 
+                              sx={{ 
+                                bgcolor: 'primary.main', 
+                                width: 40, 
+                                height: 40,
+                                mr: 1.5 
+                              }}
+                            >
+                              <PaymentIcon />
+                            </Avatar>
+                            <Typography variant="subtitle1" fontWeight="600" color="primary.dark">
+                              Payment
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" color="error" sx={{ mt: 1 }}>
                             {paymentError}
                           </Typography>
-                          <Button 
-                            variant="outlined" 
-                            color="secondary" 
-                            size="small" 
-                            onClick={fetchPaymentInfo}
-                            sx={{ mt: 1, fontSize: '0.75rem' }}
-                          >
-                            Retry
-                          </Button>
                         </Box>
-                      ) : paymentInfo ? (
-                        <>
-                          <Typography variant="h3" fontWeight="700" color="secondary.dark" sx={{ ml: 1 }}>
-                            {paymentInfo.totalPayment ? `${paymentInfo.totalPayment.toLocaleString()} ETB` : 'Pending'}
-                          </Typography>
+                      ) : !paymentInfo ? (
+                        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                            <Avatar 
+                              sx={{ 
+                                bgcolor: 'primary.main', 
+                                width: 40, 
+                                height: 40,
+                                mr: 1.5 
+                              }}
+                            >
+                              <PaymentIcon />
+                            </Avatar>
+                            <Typography variant="subtitle1" fontWeight="600" color="primary.dark">
+                              Payment Status
+                            </Typography>
+                          </Box>
+                          <Box sx={{ 
+                            bgcolor: 'info.lighter', 
+                            p: 1.5, 
+                            borderRadius: 1,
+                            border: '1px dashed',
+                            borderColor: 'info.light',
+                            mt: 1
+                          }}>
+                            <Typography variant="body2" color="info.dark" sx={{ fontWeight: 'medium' }}>
+                              Your payment is being processed
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontSize: '0.8rem' }}>
+                              Payment calculations are completed after all your courses are approved and your total load is finalized by the finance department.
+                            </Typography>
+                          </Box>
                           <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center' }}>
-                            <Tooltip title={`Payment ${paymentInfo.status === 'estimated' || paymentInfo.isEstimated ? 'estimated' : (paymentInfo.status || 'pending')}`}>
-                              <InfoIcon sx={{ fontSize: 16, color: 'secondary.main', mr: 0.5 }} />
-                            </Tooltip>
-                            <Typography variant="body2" color="text.secondary">
-                              {paymentInfo.status === 'calculated' ? 'Payment calculated' : 
-                               paymentInfo.status === 'pending' ? 'Payment pending approval' : 
-                               paymentInfo.status === 'approved' ? 'Payment approved' : 
-                               paymentInfo.status === 'estimated' ? 'Estimated payment' : 
-                               paymentInfo.isEstimated ? 'Estimated payment' : 'Payment status unknown'}
+                            <InfoIcon sx={{ fontSize: 16, color: 'primary.main', mr: 0.5 }} />
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                              You'll receive an email notification when your payment is calculated.
                             </Typography>
                           </Box>
-                          <Box sx={{ mt: 2 }}>
-                            <Typography variant="body2" color="text.secondary" gutterBottom>
-                              Total Load: <strong>{paymentInfo.totalLoad || 0} hrs</strong>
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" gutterBottom>
-                              Rate per Load: <strong>ETB {paymentInfo.paymentAmount || 0}</strong>
-                            </Typography>
-                          </Box>
-                          {paymentInfo.createdAt && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                              {(paymentInfo.status === 'pending' && !paymentInfo._id) || 
-                               paymentInfo.status === 'estimated' || 
-                               paymentInfo.isEstimated ? 
-                                'Estimated payment (not yet saved)' : 
-                                `Last updated: ${new Date(paymentInfo.createdAt).toLocaleDateString()}`}
-                            </Typography>
-                          )}
-                        </>
-                      ) : (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '70%' }}>
-                          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                            No payment information available yet
-                          </Typography>
-                          <Button 
-                            variant="outlined" 
-                            color="secondary" 
-                            size="small" 
-                            onClick={fetchPaymentInfo}
-                            sx={{ mt: 2, fontSize: '0.75rem' }}
-                          >
-                            Refresh
-                          </Button>
                         </Box>
+                      ) : (
+                        <>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                            <Avatar 
+                              sx={{ 
+                                bgcolor: 'primary.main', 
+                                width: 40, 
+                                height: 40,
+                                mr: 1.5 
+                              }}
+                            >
+                              <MonetizationOnIcon />
+                            </Avatar>
+                            <Typography variant="subtitle1" fontWeight="600" color="primary.dark">
+                              Payment
+                            </Typography>
+                          </Box>
+                          <Typography variant="h3" fontWeight="700" color="primary.dark" sx={{ ml: 1 }}>
+                            {paymentInfo.totalPayment ? `ETB ${parseInt(paymentInfo.totalPayment).toLocaleString()}` : 'N/A'}
+                          </Typography>
+                          {paymentInfo.status === 'pending' && (
+                            <Box sx={{ 
+                              display: 'flex', 
+                              flexDirection: 'column',
+                              mt: 0.5, 
+                              ml: 1,
+                              bgcolor: 'info.lighter',
+                              p: 1,
+                              borderRadius: 1,
+                              width: 'calc(100% - 16px)',
+                              border: '1px dashed',
+                              borderColor: 'info.light'
+                            }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <AccessTimeIcon sx={{ fontSize: 16, color: 'info.main', mr: 0.5 }} />
+                                <Typography variant="body2" color="info.main" sx={{ fontWeight: 'medium' }}>
+                                  Payment Calculated
+                                </Typography>
+                              </Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 0.5 }}>
+                                Payment will be processed according to the university schedule.
+                              </Typography>
+                            </Box>
+                          )}
+                          {paymentInfo.status === 'approved' && (
+                            <Box sx={{ 
+                              display: 'flex', 
+                              flexDirection: 'column',
+                              mt: 0.5, 
+                              ml: 1,
+                              bgcolor: 'success.lighter',
+                              p: 1,
+                              borderRadius: 1,
+                              width: 'calc(100% - 16px)',
+                              border: '1px dashed',
+                              borderColor: 'success.light'
+                            }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <CheckCircleIcon sx={{ fontSize: 16, color: 'success.main', mr: 0.5 }} />
+                                <Typography variant="body2" color="success.main" sx={{ fontWeight: 'medium' }}>
+                                  Payment Approved
+                                </Typography>
+                              </Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 0.5 }}>
+                                Funds will be disbursed according to the university payment schedule.
+                              </Typography>
+                            </Box>
+                          )}
+                          <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <Tooltip title="Your calculated payment amount for this semester">
+                                <InfoIcon sx={{ fontSize: 16, color: 'primary.main', mr: 0.5 }} />
+                              </Tooltip>
+                              <Typography variant="body2" color="text.secondary">
+                                Rate: ETB {paymentInfo.paymentAmount}/load
+                              </Typography>
+                            </Box>
+                            <Tooltip title={paymentInfo.status === 'pending' ? 
+                              'Your payment has been calculated and is ready for disbursement' : 
+                              paymentInfo.status === 'approved' ? 
+                              'Your payment has been approved and funds will be disbursed soon' : 
+                              'Payment status'}>
+                              <Chip 
+                                size="small" 
+                                label={paymentInfo.status === 'pending' ? 'Calculated' : 
+                                       paymentInfo.status === 'approved' ? 'Approved' : 
+                                       paymentInfo.status.charAt(0).toUpperCase() + paymentInfo.status.slice(1)}
+                                color={paymentInfo.status === 'approved' ? 'success' : paymentInfo.status === 'pending' ? 'info' : 'default'}
+                                icon={paymentInfo.status === 'pending' ? <AccessTimeIcon style={{ fontSize: '0.7rem' }} /> : undefined}
+                                sx={{ 
+                                  height: 20, 
+                                  '& .MuiChip-label': { px: 1, py: 0.1, fontSize: '0.7rem' },
+                                  '& .MuiChip-icon': { ml: 0.5, mr: -0.25 }
+                                }}
+                              />
+                            </Tooltip>
+                          </Box>
+                        </>
                       )}
                     </Paper>
                   </Grid>

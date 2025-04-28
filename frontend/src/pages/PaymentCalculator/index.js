@@ -71,7 +71,7 @@ const PaymentCalculator = () => {
   const [isEditingRate, setIsEditingRate] = useState(false);
   const [previousRate, setPreviousRate] = useState('');
   const [isRateSaved, setIsRateSaved] = useState(false);
-  const [rateEditConfirm, setRateEditConfirm] = useState({ open: false, action: null, termsAccepted: false });
+  const [rateEditConfirm, setRateEditConfirm] = useState({ open: false, action: null, termsAccepted: false, message: '' });
   
   // Calculate payment amount based on total load and rate
   const calculatePayment = useCallback((totalLoad, rate) => {
@@ -183,21 +183,17 @@ const PaymentCalculator = () => {
             'Accept': 'application/json'
           }
         });
-        
-        console.log('Approved instructors data:', instructorsResponse.data);
-        
+                
         // Process instructors and fetch payment information
         const instructorsWithPayment = await Promise.all(
           instructorsResponse.data.data.map(async (instructor) => {
             // Log the instructor data to see the totalLoad
-            console.log(`Instructor ${instructor.name} data:`, instructor);
             
             // The totalLoad is already calculated correctly in the backend response
             // We just need to ensure it's a number
             let totalLoad = parseFloat(instructor.totalLoad) || 0;
             
             // Log the extracted totalLoad
-            console.log(`Extracted totalLoad for ${instructor.name}: ${totalLoad}`);
             
             // If totalLoad is still 0 and we have courses data, calculate it
             if (totalLoad === 0 && instructor.courses && instructor.courses.length > 0) {
@@ -211,7 +207,6 @@ const PaymentCalculator = () => {
                 return sum + creditHours + lectureLoad + labLoad + tutorialLoad;
               }, 0);
               
-              console.log(`Calculated totalLoad from courses for ${instructor.name}: ${totalLoad}`);
             }
             
             // Get payment information
@@ -222,18 +217,26 @@ const PaymentCalculator = () => {
               // Use a default value based on instructor ID to ensure we have something
               const idLastChar = instructor._id.toString().slice(-1);
               totalLoad = parseFloat(idLastChar) || 3;
-              console.log(`Using default totalLoad for ${instructor.name}: ${totalLoad}`);
             }
             
             // Calculate the payment amount based on total load and rate per load
-            const calculatedAmount = Math.round((totalLoad * parseFloat(ratePerLoad || 500)) * 100) / 100;
+            // If there's no rate yet, use the existing payment amount if available
+            let calculatedAmount = 0;
+            
+            if (payment && payment.totalPayment > 0) {
+              // If we have an existing payment, use that amount
+              calculatedAmount = payment.totalPayment;
+            } else if (parseFloat(ratePerLoad) > 0) {
+              // If we have a rate, calculate the amount
+              calculatedAmount = Math.round((totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+            } 
             
             return {
               ...instructor,
               school: instructor.school || 'N/A',
               department: instructor.department || 'N/A',
               paymentAmount: payment ? payment.totalPayment : 0,
-              calculatedAmount: calculatedAmount, // Use the calculated amount based on total load
+              calculatedAmount: calculatedAmount, // Use the calculated amount based on total load or existing payment
               lastSavedAt: payment ? payment.updatedAt : null,
               isPaid: payment ? true : false,
               totalLoad: totalLoad
@@ -243,12 +246,8 @@ const PaymentCalculator = () => {
         
         setInstructors(instructorsWithPayment);
         
-        // Always set a default rate per load to ensure it's never empty
-        // This will be overridden if the user has already set a value
-        if (!ratePerLoad || ratePerLoad === '0') {
-          setRatePerLoad('500'); // Default rate
-          console.log('Set default rate per load: 500');
-        }
+        // Don't set any default rate - let the user enter it
+        // Only keep the existing rate if it's already set
         setError(null);
       } catch (err) {
         setError('Failed to fetch instructors. Please try again.');
@@ -261,41 +260,95 @@ const PaymentCalculator = () => {
     fetchInstructors();
   }, [enqueueSnackbar]);
 
-  // Send notification to instructor about their payment calculation
-  const notifyInstructor = async (instructor, calculatedAmount, totalLoad) => {
+  // Check if the current rate is consistent with existing calculations
+  const isRateConsistent = useCallback(() => {
+    // If there's no rate set, return true (we'll handle this separately)
+    if (!ratePerLoad || ratePerLoad === '0') return true;
+    
+    // Find instructors with calculated or saved payments
+    const calculatedInstructors = instructors.filter(inst => 
+      inst.calculatedAmount > 0 || 
+      (inst.isPaid && inst.lastSavedAt)
+    );
+    
+    // If no instructors have calculations yet, rate is consistent
+    if (calculatedInstructors.length === 0) return true;
+    
+    // Get the rate used for other instructors
+    const existingInstructor = calculatedInstructors[0];
+    const existingRate = existingInstructor.isPaid && existingInstructor.lastSavedAt
+      ? existingInstructor.paymentAmount / existingInstructor.totalLoad
+      : existingInstructor.calculatedAmount / existingInstructor.totalLoad;
+    
+    const currentRate = parseFloat(ratePerLoad);
+    
+    // Check if rates are different (allowing for small floating point differences)
+    return Math.abs(existingRate - currentRate) <= 0.01;
+  }, [instructors, ratePerLoad]);
+  
+  // Helper function to perform the actual calculation
+  const performCalculation = (instructor, providedTotalLoad = null) => {
     try {
-      const token = localStorage.getItem('token');
-      // Send notification to the instructor
-      await axios.post(`/api/v1/notifications`, {
-        recipient: instructor._id,
-        title: 'Payment Calculated',
-        message: `Your payment has been calculated. Total Load: ${totalLoad}, Amount: ${calculatedAmount} ETB`,
-        type: 'payment',
-        data: {
-          totalLoad,
-          calculatedAmount,
-          ratePerLoad
-        }
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      // Use provided total load or get it from the instructor
+      const totalLoad = providedTotalLoad !== null ? providedTotalLoad : (instructor.totalLoad || 0);
+      const rate = parseFloat(ratePerLoad);
+      const calculatedAmount = Math.round((totalLoad * rate) * 100) / 100;
       
-      console.log(`Notification sent to ${instructor.name}`);
-      return true;
-    } catch (error) {
-      console.error('Error sending notification:', error);
-      return false;
+      setInstructors(prev => prev.map(inst => {
+        if (instructor._id === inst._id) {
+          return {
+            ...inst,
+            totalLoad: totalLoad,
+            calculatedAmount: calculatedAmount, // Use consistent naming
+            paymentAmount: calculatedAmount, // Make sure payment amount matches calculated amount
+            isPaid: false,
+            lastSavedAt: null
+          };
+        }
+        return inst;
+      }));
+
+      enqueueSnackbar(`Calculated payment for ${instructor.name}: ${calculatedAmount} ETB`, { 
+        variant: 'info',
+        autoHideDuration: 3000
+      });
+    } catch (err) {
+      console.error('Error in performCalculation:', err);
+      enqueueSnackbar('Failed to calculate payment', { variant: 'error' });
     }
   };
-
+  
   // Calculate payment for an instructor
   const handleCalculate = (instructor) => {
-    if (!ratePerLoad) {
+    if (!ratePerLoad || ratePerLoad === '0') {
       enqueueSnackbar('Please enter a rate per load', { variant: 'warning' });
       return;
+    }
+    
+    // Check if any instructor has already been calculated with a different rate
+    const calculatedInstructors = instructors.filter(inst => 
+      inst._id !== instructor._id && 
+      inst.calculatedAmount > 0 && 
+      inst.isPaid
+    );
+    
+    if (calculatedInstructors.length > 0) {
+      // Get the rate used for other instructors
+      const existingInstructor = calculatedInstructors[0];
+      const existingRate = existingInstructor.calculatedAmount / existingInstructor.totalLoad;
+      const currentRate = parseFloat(ratePerLoad);
+      
+      // Check if rates are different (allowing for small floating point differences)
+      if (Math.abs(existingRate - currentRate) > 0.01) {
+        // Show confirmation dialog with warning
+        setRateEditConfirm({
+          open: true,
+          action: () => performCalculation(instructor),
+          termsAccepted: false,
+          message: `Warning: You are using a different rate (${currentRate}) than previously saved calculations (${existingRate.toFixed(2)}). All instructors should be calculated with the same rate for consistency.`
+        });
+        return;
+      }
     }
 
     try {
@@ -322,21 +375,10 @@ const PaymentCalculator = () => {
               return inst;
             }));
             
-            // Notify the instructor about their payment calculation
-            notifyInstructor(instructor, calculatedAmount, newTotalLoad)
-              .then(success => {
-                if (success) {
-                  enqueueSnackbar(`Updated total load to ${newTotalLoad}, calculated payment: ${calculatedAmount} ETB, and notified instructor`, { 
-                    variant: 'success',
-                    autoHideDuration: 3000
-                  });
-                } else {
-                  enqueueSnackbar(`Updated total load to ${newTotalLoad} and calculated payment: ${calculatedAmount} ETB, but failed to notify instructor`, { 
-                    variant: 'warning',
-                    autoHideDuration: 3000
-                  });
-                }
-              });
+            enqueueSnackbar(`Updated total load to ${newTotalLoad} and calculated payment: ${calculatedAmount} ETB`, { 
+              variant: 'success',
+              autoHideDuration: 3000
+            });
           } else {
             enqueueSnackbar(`Warning: ${instructor.name} has no load assigned`, { variant: 'warning' });
           }
@@ -347,37 +389,7 @@ const PaymentCalculator = () => {
         return;
       }
       
-      const calculatedAmount = Math.round((totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
-      
-      setInstructors(prev => prev.map(inst => {
-        if (instructor._id === inst._id) {
-          return {
-            ...inst,
-            totalLoad: totalLoad,
-            calculatedAmount: calculatedAmount, // Use consistent naming
-            paymentAmount: calculatedAmount, // Make sure payment amount matches calculated amount
-            isPaid: false,
-            lastSavedAt: null
-          };
-        }
-        return inst;
-      }));
-
-      // Notify the instructor about their payment calculation
-      notifyInstructor(instructor, calculatedAmount, totalLoad)
-        .then(success => {
-          if (success) {
-            enqueueSnackbar(`Calculated payment for ${instructor.name}: ${calculatedAmount} ETB and notified instructor`, { 
-              variant: 'info',
-              autoHideDuration: 3000
-            });
-          } else {
-            enqueueSnackbar(`Calculated payment for ${instructor.name}: ${calculatedAmount} ETB, but failed to notify instructor`, { 
-              variant: 'warning',
-              autoHideDuration: 3000
-            });
-          }
-        });
+      performCalculation(instructor, totalLoad);
     } catch (err) {
       console.error('Error calculating payment:', err);
       enqueueSnackbar('Failed to calculate payment', { variant: 'error' });
@@ -406,7 +418,6 @@ const PaymentCalculator = () => {
         
         if (foundInstructor && foundInstructor.totalLoad) {
           const totalLoad = parseFloat(foundInstructor.totalLoad) || 0;
-          console.log(`Found instructor in approved list with totalLoad: ${totalLoad}`);
           return totalLoad;
         }
       }
@@ -430,7 +441,6 @@ const PaymentCalculator = () => {
           return sum + creditHours + lectureLoad + labLoad + tutorialLoad;
         }, 0);
         
-        console.log(`Calculated total load from courses: ${totalLoad}`);
         return totalLoad;
       }
       
@@ -445,7 +455,6 @@ const PaymentCalculator = () => {
       if (userResponse.data.data) {
         const user = userResponse.data.data;
         const totalLoad = parseFloat(user.totalLoad || user.currentWorkload || 0);
-        console.log(`Got total load from user data: ${totalLoad}`);
         return totalLoad;
       }
       
@@ -542,19 +551,25 @@ const PaymentCalculator = () => {
   // Handle rate edit confirmation
   const handleRateEditConfirm = useCallback(() => {
     if (!rateEditConfirm.termsAccepted) {
-      enqueueSnackbar('Please accept the terms to continue', { variant: 'warning' });
+      enqueueSnackbar('Please confirm the rate change', { variant: 'warning' });
       return;
     }
-
-    if (rateEditConfirm.action === 'save') {
+    
+    // Execute the stored action if it exists and is a function
+    if (rateEditConfirm.action && typeof rateEditConfirm.action === 'function') {
+      rateEditConfirm.action();
+    } else if (rateEditConfirm.action === 'save') {
       handleCalculateAll();
       setIsEditingRate(false);
     } else if (rateEditConfirm.action === 'edit') {
       setPreviousRate(ratePerLoad);
       setIsEditingRate(true);
     }
-    setRateEditConfirm({ open: false, action: null, termsAccepted: false });
-  }, [rateEditConfirm.action, rateEditConfirm.termsAccepted, ratePerLoad, handleCalculateAll, enqueueSnackbar]);
+    
+    setRateEditConfirm({ open: false, action: null, termsAccepted: false, message: '' });
+  }, [rateEditConfirm.termsAccepted, rateEditConfirm.action, enqueueSnackbar, handleCalculateAll, ratePerLoad]);
+
+  // This function is now merged into handleRateEditConfirm to avoid duplication
 
   // Open confirmation for single save
   const handleSaveClick = (instructor) => {
@@ -568,7 +583,9 @@ const PaymentCalculator = () => {
 
   // Open confirmation for report generation
   const handleReportClick = (instructor) => {
-    setReportConfirm({ open: true, instructor, termsAccepted: false });
+    // Ensure we have the most up-to-date instructor data
+    const updatedInstructor = instructors.find(inst => inst._id === instructor._id) || instructor;
+    setReportConfirm({ open: true, instructor: updatedInstructor, termsAccepted: false });
   };
 
   // Close report confirmation
@@ -599,13 +616,23 @@ const PaymentCalculator = () => {
       const academicYear = new Date().getFullYear().toString();
       const semester = 'First'; // TODO: Make this dynamic based on current semester
       
-      // Use the data we already have without making additional API calls
-      // This avoids 404 errors with non-existent endpoints
-      let currentInstructor = {...instructor};
+      // Get the most up-to-date instructor data
+      const currentInstructor = instructors.find(inst => inst._id === instructor._id) || instructor;
       
-      // Calculate the payment amount based on rate and load
-      // This should match exactly how it's calculated in the PaymentCalculator
-      const totalPaymentAmount = Math.round((instructor.totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+      // Get the correct rate and payment values
+      let displayRatePerLoad = parseFloat(ratePerLoad);
+      let displayTotalPayment = currentInstructor.calculatedAmount;
+      
+      // If we have payment data, use that for the report
+      if (currentInstructor.paymentAmount > 0) {
+        displayTotalPayment = currentInstructor.paymentAmount;
+      }
+      
+      // If we have an existing payment, try to calculate the rate per load
+      if (currentInstructor.totalLoad > 0 && displayTotalPayment > 0) {
+        // Back-calculate the rate per load from the total payment and total load
+        displayRatePerLoad = Math.round((displayTotalPayment / currentInstructor.totalLoad) * 100) / 100;
+      }
       
       // Create HTML content for the report
       const reportContent = `
@@ -614,7 +641,7 @@ const PaymentCalculator = () => {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Payment Report - ${instructor.name}</title>
+          <title>Payment Report - ${currentInstructor.name}</title>
           <style>
             body {
               font-family: Arial, sans-serif;
@@ -733,23 +760,23 @@ const PaymentCalculator = () => {
             <table class="info-table">
               <tr>
                 <td>Name</td>
-                <td>${instructor.name || 'N/A'}</td>
+                <td>${currentInstructor.name || 'N/A'}</td>
               </tr>
               <tr>
                 <td>Department</td>
-                <td>${instructor.department || 'N/A'}</td>
+                <td>${currentInstructor.department || 'N/A'}</td>
               </tr>
               <tr>
                 <td>School</td>
-                <td>${instructor.school || 'N/A'}</td>
+                <td>${currentInstructor.school || 'N/A'}</td>
               </tr>
               <tr>
                 <td>Email</td>
-                <td>${instructor.email || 'N/A'}</td>
+                <td>${currentInstructor.email || 'N/A'}</td>
               </tr>
               <tr>
                 <td>ID</td>
-                <td>${instructor._id || 'N/A'}</td>
+                <td>${currentInstructor._id || 'N/A'}</td>
               </tr>
             </table>
           </div>
@@ -759,23 +786,23 @@ const PaymentCalculator = () => {
             <table class="info-table">
               <tr>
                 <td>Total Load</td>
-                <td>${instructor.totalLoad || '0'}</td>
+                <td>${currentInstructor.totalLoad || '0'}</td>
               </tr>
               <tr>
                 <td>Rate per Load</td>
-                <td>ETB ${ratePerLoad || '0'}</td>
+                <td>ETB ${displayRatePerLoad.toLocaleString()}</td>
               </tr>
               <tr>
                 <td>Calculated Amount</td>
-                <td class="amount">ETB ${totalPaymentAmount ? totalPaymentAmount.toLocaleString() : '0'}</td>
+                <td class="amount">ETB ${displayTotalPayment ? displayTotalPayment.toLocaleString() : '0'}</td>
               </tr>
               <tr>
                 <td>Payment Status</td>
-                <td>${instructor.lastSavedAt || instructor.isPaid ? '<span style="color: #2e7d32; font-weight: bold;">Saved</span>' : '<span style="color: #d32f2f; font-weight: bold;">Not Saved</span>'}</td>
+                <td>${currentInstructor.lastSavedAt || currentInstructor.isPaid ? '<span style="color: #2e7d32; font-weight: bold;">Saved</span>' : '<span style="color: #d32f2f; font-weight: bold;">Not Saved</span>'}</td>
               </tr>
               <tr>
                 <td>Last Saved</td>
-                <td>${instructor.lastSavedAt ? new Date(instructor.lastSavedAt).toLocaleString() : 'N/A'}</td>
+                <td>${currentInstructor.lastSavedAt ? new Date(currentInstructor.lastSavedAt).toLocaleString() : 'N/A'}</td>
               </tr>
             </table>
           </div>
@@ -835,17 +862,8 @@ const PaymentCalculator = () => {
       reportWindow.document.write(reportContent);
       reportWindow.document.close();
       
-      // Update instructor in state with fetched data if needed
-      if (JSON.stringify(instructor) !== JSON.stringify(currentInstructor)) {
-        setInstructors(prevInstructors =>
-          prevInstructors.map(inst =>
-            inst._id === instructor._id ? currentInstructor : inst
-          )
-        );
-      }
-      
       // Show success message
-      enqueueSnackbar(`Payment report generated for ${instructor.name}`, { variant: 'success' });
+      enqueueSnackbar(`Payment report generated for ${currentInstructor.name}`, { variant: 'success' });
     } catch (error) {
       console.error('Error generating report:', error);
       enqueueSnackbar('Failed to generate payment report', { variant: 'error' });
@@ -855,7 +873,6 @@ const PaymentCalculator = () => {
   // Save payment for a single instructor
   const handleSavePayment = async (instructor) => {
     // Log the instructor data for debugging
-    console.log('Saving payment for instructor:', instructor);
     if (!singleSaveConfirm.termsAccepted) {
       enqueueSnackbar('Please confirm the payment details', { variant: 'warning' });
       return;
@@ -872,7 +889,6 @@ const PaymentCalculator = () => {
           const newTotalLoad = await fetchInstructorTotalLoad(instructor._id);
           if (newTotalLoad > 0) {
             totalLoad = newTotalLoad;
-            console.log(`Updated total load for ${instructor.name} to ${totalLoad}`);
           }
         } catch (err) {
           console.error('Error fetching total load during payment save:', err);
@@ -880,7 +896,39 @@ const PaymentCalculator = () => {
       }
       
       // Calculate total payment using the potentially updated total load
-      const totalPayment = Math.round((totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+      // Only use the rate that was explicitly set by the user
+      const rate = parseFloat(ratePerLoad);
+      
+      // If rate is not set, show error and exit
+      if (!rate) {
+        enqueueSnackbar('Please set a rate per load before saving', { variant: 'error' });
+        return;
+      }
+      
+      // Check if there are other saved payments with a different rate
+      const savedInstructors = instructors.filter(inst => 
+        inst._id !== instructor._id && 
+        inst.isPaid && 
+        inst.lastSavedAt
+      );
+      
+      if (savedInstructors.length > 0) {
+        // Get the rate used for other instructors
+        const existingInstructor = savedInstructors[0];
+        const existingRate = existingInstructor.paymentAmount / existingInstructor.totalLoad;
+        
+        // Check if rates are different (allowing for small floating point differences)
+        if (Math.abs(existingRate - rate) > 0.01) {
+          enqueueSnackbar(`Warning: You must use the same rate (${existingRate.toFixed(2)}) for all instructors. Current rate: ${rate}`, { 
+            variant: 'error',
+            autoHideDuration: 6000
+          });
+          return;
+        }
+      }
+      
+      const totalPayment = Math.round((totalLoad * rate) * 100) / 100;
+      
       const academicYear = new Date().getFullYear().toString();
       const semester = 'First'; // TODO: Make this dynamic based on current semester
 
@@ -897,33 +945,14 @@ const PaymentCalculator = () => {
       const existingPayment = checkResponse.data.data.payment;
       const currentTime = new Date().toISOString();
       
-      // If payment exists and amount is the same, update the lastSavedAt time
-      if (existingPayment && Math.abs(existingPayment.totalPayment - totalPayment) < 0.01) {
-        setInstructors(prevInstructors =>
-          prevInstructors.map(inst =>
-            inst._id === instructor._id
-              ? {
-                  ...inst,
-                  paymentAmount: totalPayment,
-                  calculatedAmount: totalPayment,
-                  totalLoad: totalLoad,
-                  lastSavedAt: currentTime,
-                  isPaid: true
-                }
-              : inst
-          )
-        );
-        enqueueSnackbar(`Payment updated for ${instructor.name}`, { variant: 'success' });
-        return;
-      }
-
-      // Save new payment or update if amount changed
+      
+      // Save new payment or update existing one
       const response = await axios.post(
         `/api/v1/finance/instructors/${instructor._id}/payments`,
         {
           totalLoad: totalLoad,
-          paymentAmount: parseFloat(ratePerLoad),
-          totalPayment,
+          paymentAmount: rate, // Use paymentAmount as expected by the backend
+          totalPayment: totalPayment, // Send the calculated total payment
           academicYear,
           semester
         },
@@ -943,7 +972,7 @@ const PaymentCalculator = () => {
             ? {
                 ...inst,
                 paymentAmount: totalPayment,
-                calculatedAmount: totalPayment,
+                calculatedAmount: totalPayment, // Ensure calculated amount matches payment amount
                 totalLoad: totalLoad,
                 lastSavedAt: savedPayment.updatedAt || currentTime,
                 isPaid: true
@@ -951,6 +980,14 @@ const PaymentCalculator = () => {
             : inst
         )
       );
+      
+      // Log the updated state for debugging
+      console.log(`Updated payment for ${instructor.name}:`, {
+        totalLoad,
+        rate,
+        totalPayment,
+        lastSavedAt: savedPayment.updatedAt || currentTime
+      });
 
       enqueueSnackbar(
         existingPayment 
@@ -1062,7 +1099,8 @@ const PaymentCalculator = () => {
             mb: { xs: 2, sm: 3, md: 4 },
             pb: 2,
             borderBottom: 1,
-            borderColor: 'divider'
+            borderColor: 'divider',
+            flexWrap: { xs: 'wrap', sm: 'nowrap' }
           }}
         >
           <CalculateIcon 
@@ -1091,13 +1129,17 @@ const PaymentCalculator = () => {
         <Paper 
           elevation={1} 
           sx={{ 
-            p: 2, 
-            mb: 3,
+            p: { xs: 1.5, sm: 2 }, 
+            mb: { xs: 2, sm: 3 },
             bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.background.paper, 0.8) : '#fff',
-            borderRadius: 2
+            borderRadius: 2,
+            transition: 'box-shadow 0.3s ease',
+            '&:hover': {
+              boxShadow: 3
+            }
           }}
         >
-          <Grid container spacing={2} alignItems="center">
+          <Grid container spacing={{ xs: 1.5, sm: 2 }} alignItems="center">
             <Grid item xs={12} sm={6} md={2.5}>
               <TextField
                 fullWidth
@@ -1210,20 +1252,22 @@ const PaymentCalculator = () => {
               <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
                 <Stack spacing={4}>
                   <Stack 
-                    direction="row" 
+                    direction={{ xs: 'column', sm: 'row' }} 
                     justifyContent="space-between" 
-                    alignItems="center"
+                    alignItems={{ xs: 'flex-start', sm: 'center' }}
                     sx={{ 
                       borderBottom: 1,
                       borderColor: 'divider',
-                      pb: 1
+                      pb: { xs: 1.5, sm: 1 },
+                      gap: { xs: 1, sm: 0 }
                     }}
                   >
                     <Typography 
                       variant="h6" 
                       sx={{ 
                         fontWeight: 600,
-                        color: 'primary.main'
+                        color: 'primary.main',
+                        fontSize: { xs: '1.1rem', sm: '1.25rem' }
                       }}
                     >
                       Set Rate Per Load
@@ -1235,7 +1279,15 @@ const PaymentCalculator = () => {
                       onClick={handleRateEditToggle}
                       disabled={!hasInstructors}
                       startIcon={isEditingRate ? <CheckIcon /> : <EditIcon />}
-                      sx={{ ml: 1, minWidth: 120 }}
+                      sx={{ 
+                        minWidth: { xs: '100%', sm: 120 },
+                        borderRadius: 2,
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          transform: 'translateY(-2px)',
+                          boxShadow: 1
+                        }
+                      }}
                     >
                       {isEditingRate ? 'Save' : 'Edit'}
                     </Button>
@@ -1349,14 +1401,18 @@ const PaymentCalculator = () => {
           variant="outlined" 
           sx={{ 
             borderRadius: 2,
-            overflow: 'hidden',
+            overflow: 'auto',
+            maxHeight: { xs: '60vh', sm: 'none' },
             '& .MuiTableCell-root': {
               px: { xs: 1, sm: 2, md: 3 },
               py: { xs: 1.5, sm: 2 },
-              fontSize: { xs: '0.875rem', sm: '1rem' }
+              fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' }
             },
             '& .MuiTableHead-root': {
               bgcolor: 'background.paper',
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
               '& .MuiTableCell-root': {
                 fontWeight: 600,
                 color: 'text.primary'
@@ -1370,9 +1426,18 @@ const PaymentCalculator = () => {
             }
           }}
         >
-          <Table sx={{ minWidth: { xs: 'auto', sm: 650 } }}>
+          <Table sx={{ minWidth: { xs: 350, sm: 650 } }}>
             <TableHead>
-              <TableRow>
+              <TableRow sx={{ 
+                '& th': { 
+                  fontWeight: 'bold',
+                  whiteSpace: 'nowrap',
+                  fontSize: { xs: '0.7rem', sm: '0.8rem', md: '0.875rem' },
+                  bgcolor: theme => alpha(theme.palette.primary.main, 0.05),
+                  borderBottom: '2px solid',
+                  borderColor: theme => alpha(theme.palette.primary.main, 0.1)
+                }
+              }}>
                 <TableCell>Instructor</TableCell>
                 {!isMobile && (
                   <>
@@ -1381,7 +1446,7 @@ const PaymentCalculator = () => {
                   </>
                 )}
                 <TableCell>Total Load</TableCell>
-                <TableCell>Calculated Amount</TableCell>
+                <TableCell>{isMobile ? 'Amount' : 'Calculated Amount'}</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -1636,9 +1701,13 @@ const PaymentCalculator = () => {
                       </Stack>
                     </TableCell>
                     <TableCell>
-                      {instructor.calculatedAmount ? (
+                      {instructor.calculatedAmount > 0 ? (
                         <Typography color="success.main">
                           ETB {instructor.calculatedAmount.toLocaleString()}
+                        </Typography>
+                      ) : instructor.paymentAmount > 0 ? (
+                        <Typography color="success.main">
+                          ETB {instructor.paymentAmount.toLocaleString()}
                         </Typography>
                       ) : (
                         <Typography color="text.secondary">
@@ -1650,31 +1719,57 @@ const PaymentCalculator = () => {
                       <Stack direction="row" spacing={1} alignItems="center">
                       {(!instructor.isPaid && !instructor.lastSavedAt) ? (
                         <>
-                          <Button
-                            onClick={() => handleCalculate(instructor)}
-                            variant="contained"
-                            color="primary"
-                            size="small"
-                            sx={{
-                              minWidth: 'auto',
-                              px: 2,
-                              py: 0.5,
-                              mr: 1,
-                              boxShadow: 1
-                            }}
+                          <Tooltip title={!isRateConsistent() ? 
+                            `Rate mismatch: You must use the same rate for all instructors. Please adjust the rate per load.` : 
+                            "Calculate payment based on instructor's total load"}
                           >
-                            Calculate
-                          </Button>
+                            <span>
+                              <Button
+                                onClick={() => handleCalculate(instructor)}
+                                variant="contained"
+                                color="primary"
+                                size="small"
+                                disabled={!isRateConsistent()}
+                                sx={{
+                                  minWidth: { xs: 'auto', sm: '80px' },
+                                  px: { xs: 1, sm: 2 },
+                                  py: 0.5,
+                                  mr: { xs: 0.5, sm: 1 },
+                                  boxShadow: 1,
+                                  borderRadius: 1.5,
+                                  fontSize: { xs: '0.7rem', sm: '0.8rem' },
+                                  '&.Mui-disabled': {
+                                    bgcolor: theme => alpha(theme.palette.warning.main, 0.2),
+                                    color: theme => alpha(theme.palette.warning.main, 0.8),
+                                  },
+                                  '&:hover': {
+                                    transform: 'translateY(-2px)',
+                                    boxShadow: 2,
+                                    transition: 'all 0.2s'
+                                  }
+                                }}
+                              >
+                                {isMobile ? 'Calc' : 'Calculate'}
+                              </Button>
+                            </span>
+                          </Tooltip>
                           <Button
                             onClick={() => handleSaveClick(instructor)}
                             variant="contained"
                             color="success"
                             size="small"
                             sx={{
-                              minWidth: 'auto',
-                              px: 2,
+                              minWidth: { xs: 'auto', sm: '60px' },
+                              px: { xs: 1, sm: 2 },
                               py: 0.5,
-                              boxShadow: 1
+                              boxShadow: 1,
+                              borderRadius: 1.5,
+                              fontSize: { xs: '0.7rem', sm: '0.8rem' },
+                              '&:hover': {
+                                transform: 'translateY(-2px)',
+                                boxShadow: 2,
+                                transition: 'all 0.2s'
+                              }
                             }}
                           >
                             Save
@@ -1688,10 +1783,13 @@ const PaymentCalculator = () => {
                                 bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                                 '&:hover': {
                                   bgcolor: (theme) => alpha(theme.palette.primary.main, 0.2),
-                                }
+                                  transform: 'translateY(-2px)',
+                                  transition: 'all 0.2s'
+                                },
+                                ml: { xs: 0.5, sm: 1 }
                               }}
                             >
-                              <PictureAsPdfIcon fontSize="small" />
+                              <PictureAsPdfIcon sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }} />
                             </IconButton>
                           </Tooltip>
                         </>
@@ -2035,8 +2133,11 @@ const PaymentCalculator = () => {
           </Stack>
         </DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 3, color: 'text.primary' }}>
-            Please review and confirm the following payment information:
+          <DialogContentText>
+            {rateEditConfirm.message || 'You are about to change the rate per load. This will affect all payment calculations. Please confirm this change.'}
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 2, color: 'warning.main', fontWeight: 'medium' }}>
+            Note: All instructors must be calculated with the same rate for consistency and fairness.
           </DialogContentText>
           
           {/* Payment Details Card */}
