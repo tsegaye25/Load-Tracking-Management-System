@@ -704,7 +704,7 @@ const FinanceCourses = () => {
                             alignItems: 'center',
                             justifyContent: 'center',
                             borderRadius: '12px',
-                            backgroundColor: (theme) => theme.palette.primary.lighter,
+                            backgroundColor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.primary.main, 0.2) : theme.palette.primary.lighter,
                             transition: 'transform 0.2s ease-in-out',
                             '&:hover': {
                               transform: 'scale(1.05)'
@@ -720,7 +720,7 @@ const FinanceCourses = () => {
                           sx={{ 
                             fontWeight: 600,
                             fontSize: '1rem',
-                            color: (theme) => theme.palette.grey[800]
+                            color: (theme) => theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.grey[800]
                           }}
                         >
                           {instructor.name}
@@ -733,7 +733,7 @@ const FinanceCourses = () => {
                             height: 36,
                             transition: 'all 0.2s ease-in-out',
                             '&:hover': {
-                              backgroundColor: (theme) => theme.palette.primary.lighter,
+                              backgroundColor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.primary.main, 0.2) : theme.palette.primary.lighter,
                               transform: 'scale(1.1)'
                             }
                           }}
@@ -1123,13 +1123,14 @@ Please provide a detailed reason for returning these courses:`
                               {/* Total Hours */}
                               {/* <Box sx={{ mt: 3 }}>
                                 <Paper 
-                                  elevation={3} 
+                                  elevation={0} 
                                   sx={{ 
-                                    p: 3, 
-                                    textAlign: 'center', 
-                                    bgcolor: 'success.light',
-                                    maxWidth: 300,
-                                    mx: 'auto'
+                                    p: 2, 
+                                    mb: 2, 
+                                    borderRadius: 2,
+                                    bgcolor: 'background.paper',
+                                    border: '1px solid',
+                                    borderColor: 'divider'
                                   }}
                                 >
                                   <Typography variant="subtitle1" color="success.contrastText" gutterBottom>
@@ -1148,11 +1149,11 @@ Please provide a detailed reason for returning these courses:`
                             <Box 
                               sx={{ 
                                 p: { xs: 2, md: 3 }, 
-                                bgcolor: (theme) => theme.palette.grey[50],
+                                bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(42, 42, 42, 0.3)' : theme.palette.grey[50],
                                 borderRadius: 1,
                                 mx: { xs: 1, md: 2 },
                                 my: { xs: 1, md: 2 },
-                                boxShadow: 'inset 0 2px 8px 0 rgba(0,0,0,0.04)'
+                                boxShadow: 'inset 0 2px 8px 0 rgba(0,0,0,0.1)'
                               }}>
                             <Table size="medium" sx={{
                               '& .MuiTableCell-root': {
@@ -1168,16 +1169,16 @@ Please provide a detailed reason for returning these courses:`
                             }}>
                               <TableHead>
                                 <TableRow>
-                                  <TableCell sx={{ fontWeight: 600, color: (theme) => theme.palette.grey[700] }}>Course Code</TableCell>
-                                  <TableCell sx={{ fontWeight: 600, color: (theme) => theme.palette.grey[700] }}>Title</TableCell>
+                                  <TableCell sx={{ fontWeight: 600, color: (theme) => theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.grey[700] }}>Course Code</TableCell>
+                                  <TableCell sx={{ fontWeight: 600, color: (theme) => theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.grey[700] }}>Title</TableCell>
                                   <TableCell align="center" colSpan={4} sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[700],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.grey[700],
                                     borderBottom: (theme) => `2px solid ${theme.palette.primary.light}`
                                   }}>Hours</TableCell>
                                   <TableCell align="center" colSpan={3} sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[700],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.grey[700],
                                     borderBottom: (theme) => `2px solid ${theme.palette.secondary.light}`
                                   }}>Number of Sections</TableCell>
                                 </TableRow>
@@ -1186,37 +1187,37 @@ Please provide a detailed reason for returning these courses:`
                                   <TableCell sx={{ borderBottom: 'none' }}></TableCell>
                                   <TableCell align="center" sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[600],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[300] : theme.palette.grey[600],
                                     fontSize: '0.875rem'
                                   }}>Credit</TableCell>
                                   <TableCell align="center" sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[600],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[300] : theme.palette.grey[600],
                                     fontSize: '0.875rem'
                                   }}>Lecture</TableCell>
                                   <TableCell align="center" sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[600],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[300] : theme.palette.grey[600],
                                     fontSize: '0.875rem'
                                   }}>Lab</TableCell>
                                   <TableCell align="center" sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[600],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[300] : theme.palette.grey[600],
                                     fontSize: '0.875rem'
                                   }}>Tutorial</TableCell>
                                   <TableCell align="center" sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[600],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[300] : theme.palette.grey[600],
                                     fontSize: '0.875rem'
                                   }}>Lecture</TableCell>
                                   <TableCell align="center" sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[600],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[300] : theme.palette.grey[600],
                                     fontSize: '0.875rem'
                                   }}>Lab</TableCell>
                                   <TableCell align="center" sx={{ 
                                     fontWeight: 600, 
-                                    color: (theme) => theme.palette.grey[600],
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[300] : theme.palette.grey[600],
                                     fontSize: '0.875rem'
                                   }}>Tutorial</TableCell>
                                 </TableRow>
@@ -1243,7 +1244,7 @@ Please provide a detailed reason for returning these courses:`
                                 ))}
                                 {/* Totals row */}
                                 <TableRow sx={{ 
-                                  bgcolor: (theme) => theme.palette.grey[50],
+                                  bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.primary.dark, 0.1) : theme.palette.grey[50],
                                   '& td': { fontWeight: 600 }
                                 }}>
                                   <TableCell colSpan={2}>Total</TableCell>

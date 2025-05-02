@@ -11,7 +11,7 @@ import {
   Avatar,
   Chip,
   Divider,
-  CircularProgress,
+  Skeleton,
   IconButton,
   Alert,
   Breadcrumbs,
@@ -21,6 +21,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  alpha,
 } from '@mui/material';
 import {
   Reply as ReplyIcon,
@@ -267,6 +268,87 @@ const Feedback = () => {
     </Dialog>
   );
 
+  // Function to render skeleton feedback items
+  const renderSkeletonFeedback = () => {
+    return (
+      <Box sx={{ width: '100%' }}>
+        {[1, 2, 3, 4, 5].map((item) => (
+          <Box key={item} sx={{ mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', mb: 1 }}>
+              <Skeleton 
+                variant="circular" 
+                width={40} 
+                height={40} 
+                sx={{ 
+                  mr: 2,
+                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1)
+                }} 
+              />
+              <Box sx={{ width: '100%' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Skeleton 
+                    variant="text" 
+                    width={120} 
+                    height={24} 
+                    sx={{ 
+                      mr: 1,
+                      bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1)
+                    }} 
+                  />
+                  <Skeleton 
+                    variant="rounded" 
+                    width={80} 
+                    height={20} 
+                    sx={{ 
+                      borderRadius: 1,
+                      bgcolor: (theme) => alpha(theme.palette.secondary.main, 0.1)
+                    }} 
+                  />
+                </Box>
+                <Skeleton 
+                  variant="text" 
+                  width={150} 
+                  height={16} 
+                  sx={{ 
+                    bgcolor: (theme) => alpha(theme.palette.text.secondary, 0.1)
+                  }} 
+                />
+              </Box>
+              <Skeleton 
+                variant="circular" 
+                width={30} 
+                height={30} 
+                sx={{ 
+                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1)
+                }} 
+              />
+            </Box>
+            <Skeleton 
+              variant="rounded" 
+              height={60} 
+              sx={{ 
+                ml: 7, 
+                mb: 1,
+                borderRadius: 1,
+                bgcolor: (theme) => alpha(theme.palette.background.paper, 0.7)
+              }} 
+            />
+            <Skeleton 
+              variant="text" 
+              width="40%" 
+              height={16} 
+              sx={{ 
+                ml: 7,
+                bgcolor: (theme) => alpha(theme.palette.text.secondary, 0.1)
+              }} 
+            />
+            <Divider sx={{ my: 2 }} />
+          </Box>
+        ))}
+      </Box>
+    );
+  };
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Box sx={{ mb: 4 }}>
@@ -291,10 +373,37 @@ const Feedback = () => {
         </Breadcrumbs>
       </Box>
 
-      <Paper elevation={1} sx={{ p: 3 }}>
+      <Paper 
+        elevation={1} 
+        sx={{ 
+          p: 3,
+          borderRadius: 2,
+          transition: 'box-shadow 0.3s ease',
+          '&:hover': {
+            boxShadow: 3
+          }
+        }}
+      >
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-            <CircularProgress />
+          <Box sx={{ width: '100%' }}>
+            {[1, 2, 3, 4, 5].map((item) => (
+              <Box key={item} sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', mb: 1 }}>
+                  <Skeleton variant="circular" width={40} height={40} sx={{ mr: 2 }} />
+                  <Box sx={{ width: '100%' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Skeleton variant="text" width={120} height={24} sx={{ mr: 1 }} />
+                      <Skeleton variant="rounded" width={80} height={20} />
+                    </Box>
+                    <Skeleton variant="text" width={150} height={16} />
+                  </Box>
+                  <Skeleton variant="circular" width={30} height={30} />
+                </Box>
+                <Skeleton variant="rounded" height={60} sx={{ ml: 7, mb: 1 }} />
+                <Skeleton variant="text" width="40%" height={16} sx={{ ml: 7 }} />
+                <Divider sx={{ my: 2 }} />
+              </Box>
+            ))}
           </Box>
         ) : feedbacks.length === 0 ? (
           <Alert severity="info" sx={{ mt: 2 }}>

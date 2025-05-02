@@ -132,8 +132,8 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
   // Course Assignment Permissions
   const canAssignInstructor = canReviewCourse && 
     !course.instructor && // No instructor assigned
-    !course.requestedBy && // No pending request
-    course.status !== 'rejected'; // Not rejected
+    !course.requestedBy; // No pending request
+    // Removed the restriction for rejected courses so department heads can assign rejected courses
 
   // Instructor Permissions
   const canSelfAssign = isInstructor && 
@@ -683,120 +683,125 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
 
           {/* Rejection Information - Only shown for rejected courses */}
           {isRejected && (
-            <Grid item xs={12}>
-              <Box 
-                sx={{ 
-                  p: { xs: 2, sm: 3 }, 
-                  mt: 2,
-                  borderRadius: 2,
-                  bgcolor: (theme) => alpha(theme.palette.error.light, 0.08),
-                  border: '1px solid',
-                  borderColor: (theme) => alpha(theme.palette.error.main, 0.2),
-                  position: 'relative',
-                  overflow: 'hidden'
-                }}
-              >
-                <Typography 
-                  variant="subtitle1" 
-                  color="error.main" 
-                  gutterBottom 
-                  sx={{ 
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    pb: 1,
-                    borderBottom: 1,
-                    borderColor: (theme) => alpha(theme.palette.error.main, 0.2)
-                  }}
-                >
-                  <CancelIcon fontSize="small" />
-                  Rejection Details
-                </Typography>
-                
-                <Grid container spacing={2} sx={{ mt: 0.5 }}>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Rejected By
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                      {rejectorRole}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Rejection Date & Time
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                      {rejectionDate}{rejectionTime ? ` at ${rejectionTime}` : ''}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Reason for Rejection
-                    </Typography>
-                    <Paper elevation={0} sx={{ 
-                      p: { xs: 2, md: 3 }, 
-                      bgcolor: (theme) => alpha(theme.palette.background.paper, 0.7),
+            <>
+              {/* Full rejection details - Only shown to the instructor who requested the course */}
+              {(isInstructor && ((course.requestedBy && course.requestedBy._id === user._id) || (course.rejectedInstructor && course.rejectedInstructor.id === user._id))) && (
+                <Grid item xs={12}>
+                  <Box 
+                    sx={{ 
+                      p: { xs: 2, sm: 3 }, 
+                      mt: 2,
+                      borderRadius: 2,
+                      bgcolor: (theme) => alpha(theme.palette.error.light, 0.08),
                       border: '1px solid',
-                      borderColor: (theme) => alpha(theme.palette.grey[300], 0.8),
-                      borderRadius: 1,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                    }}>
-                      <Box sx={{ 
-                        display: 'flex', 
-                        flexDirection: 'column',
-                        gap: 1.5 
-                      }}>
-                        <Box sx={{ 
-                          display: 'flex', 
-                          alignItems: 'flex-start',
-                          gap: 1.5 
-                        }}>
-                          <Box sx={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            bgcolor: 'error.main',
-                            color: 'white',
-                            flexShrink: 0,
-                            mt: 0.25
-                          }}>
-                            <Typography variant="caption" sx={{ fontWeight: 'bold' }}>!</Typography>
-                          </Box>
-                          <Box>
-                            <Typography variant="subtitle2" color="error.main" gutterBottom sx={{ fontWeight: 600 }}>
-                              Course Assignment Request Declined
-                            </Typography>
-                            <Typography variant="body2" sx={{ 
-                              color: 'text.primary',
-                              lineHeight: 1.6,
-                              fontFamily: '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                              letterSpacing: 0.1
-                            }}>
-                              {rejectionReason}
-                            </Typography>
-                          </Box>
-                        </Box>
-                        <Divider sx={{ my: 1 }} />
-                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', pl: 5 }}>
-                          If you have any questions regarding this decision, please contact the department head or academic affairs office.
+                      borderColor: (theme) => alpha(theme.palette.error.main, 0.2),
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    <Typography 
+                      variant="subtitle1" 
+                      color="error.main" 
+                      gutterBottom 
+                      sx={{ 
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        pb: 1,
+                        borderBottom: 1,
+                        borderColor: (theme) => alpha(theme.palette.error.main, 0.2)
+                      }}
+                    >
+                      <CancelIcon fontSize="small" />
+                      Rejection Details
+                    </Typography>
+                    
+                    <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          Rejected By
                         </Typography>
-                      </Box>
-                    </Paper>
-                  </Grid>
+                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                          {rejectorRole}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          Rejection Date & Time
+                        </Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                          {rejectionDate}{rejectionTime ? ` at ${rejectionTime}` : ''}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          Reason for Rejection
+                        </Typography>
+                        <Paper elevation={0} sx={{ 
+                          p: { xs: 2, md: 3 }, 
+                          bgcolor: (theme) => alpha(theme.palette.background.paper, 0.7),
+                          border: '1px solid',
+                          borderColor: (theme) => alpha(theme.palette.grey[300], 0.8),
+                          borderRadius: 1,
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                        }}>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            flexDirection: 'column',
+                            gap: 1.5 
+                          }}>
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'flex-start',
+                              gap: 1.5 
+                            }}>
+                              <Box sx={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: '50%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                bgcolor: 'error.main',
+                                color: 'white',
+                                flexShrink: 0,
+                                mt: 0.25
+                              }}>
+                                <Typography variant="caption" sx={{ fontWeight: 'bold' }}>!</Typography>
+                              </Box>
+                              <Box>
+                                <Typography variant="subtitle2" color="error.main" gutterBottom sx={{ fontWeight: 600 }}>
+                                  Course Assignment Request Declined
+                                </Typography>
+                                <Typography variant="body2" sx={{ 
+                                  color: 'text.primary',
+                                  lineHeight: 1.6,
+                                  fontFamily: '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                                  letterSpacing: 0.1
+                                }}>
+                                  {rejectionReason}
+                                </Typography>
+                              </Box>
+                            </Box>
+                            <Divider sx={{ my: 1 }} />
+                            <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', pl: 5 }}>
+                              If you have any questions regarding this decision, please contact the department head or academic affairs office.
+                            </Typography>
+                          </Box>
+                        </Paper>
+                      </Grid>
+                    </Grid>
+                  </Box>
                 </Grid>
-              </Box>
-            </Grid>
+              )}
+            </>
           )}
         </Grid>
       </Box>
     </Paper>
     
-    {/* Rejection indicator below the card */}
+    {/* Rejection indicator below the card - visible to everyone */}
     {isRejected && (
       <Paper
         elevation={1}
@@ -814,37 +819,16 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
           fontSize: '0.75rem',
           fontWeight: 'bold',
           textTransform: 'uppercase',
-          letterSpacing: '0.5px',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-          zIndex: 1,
-          position: 'relative',
-          transform: 'translateY(-1px)'
+          gap: 0.5,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
         }}
       >
-        <Box
-          sx={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            backgroundColor: 'white',
-            animation: 'pulse 1.5s infinite',
-            '@keyframes pulse': {
-              '0%': {
-                boxShadow: '0 0 0 0 rgba(255, 255, 255, 0.7)'
-              },
-              '70%': {
-                boxShadow: '0 0 0 5px rgba(255, 255, 255, 0)'
-              },
-              '100%': {
-                boxShadow: '0 0 0 0 rgba(255, 255, 255, 0)'
-              }
-            }
-          }}
-        />
-        Rejected by {rejectorRole} • {rejectionDate}
+        <CancelIcon fontSize="small" />
+        <Typography variant="caption" sx={{ fontWeight: 600 }}>
+          Rejected by {rejectorRole} • {rejectionDate}
+        </Typography>
       </Paper>
     )}
   </Box>

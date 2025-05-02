@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useSnackbar } from 'notistack';
 import axios from 'axios';
 import {
   Container,
@@ -22,33 +23,52 @@ import {
   Chip,
   LinearProgress,
   Badge,
-  alpha
+  alpha,
+  Button
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SchoolIcon from '@mui/icons-material/School';
 import BookIcon from '@mui/icons-material/Book';
+import AssignmentIcon from '@mui/icons-material/Assignment';
+import DateRangeIcon from '@mui/icons-material/DateRange';
+import PersonIcon from '@mui/icons-material/Person';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import WarningIcon from '@mui/icons-material/Warning';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import ClassIcon from '@mui/icons-material/Class';
-import PersonIcon from '@mui/icons-material/Person';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import InfoIcon from '@mui/icons-material/Info';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PaymentIcon from '@mui/icons-material/Payment';
-import DateRangeIcon from '@mui/icons-material/DateRange';
+import ClassIcon from '@mui/icons-material/Class';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { getMyCourses } from '../../store/courseSlice';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
+} from 'recharts';
 
 const Dashboard = () => {
   const dispatch = useDispatch();
+  const { enqueueSnackbar } = useSnackbar();
   const { user } = useSelector((state) => state.auth);
   const { myCourses, myCoursesLoading } = useSelector((state) => state.course);
   const [expandedCourse, setExpandedCourse] = useState(null);
   const [paymentInfo, setPaymentInfo] = useState(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
+  
+  // Department head statistics
+  const [departmentStats, setDepartmentStats] = useState(null);
+  const [departmentStatsLoading, setDepartmentStatsLoading] = useState(true);
+  const [departmentCourses, setDepartmentCourses] = useState(0);
+  const [assignedCourses, setAssignedCourses] = useState(0);
+  const [unassignedCourses, setUnassignedCourses] = useState(0);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [instructorList, setInstructorList] = useState([]);
+  const [courseStatusDistribution, setCourseStatusDistribution] = useState([]);
+  const [courseTypeDistribution, setCourseTypeDistribution] = useState([]);
+  const [monthlyStats, setMonthlyStats] = useState([]);
   
   const handleCourseExpand = (courseId) => {
     setExpandedCourse(expandedCourse === courseId ? null : courseId);
@@ -103,12 +123,142 @@ const Dashboard = () => {
     }
   };
 
-  useEffect(() => {
-    if (user?.role === 'instructor') {
-      dispatch(getMyCourses());
-      fetchPaymentInfo();
+  // Fetch department head statistics
+  const fetchDepartmentHeadStats = async () => {
+    try {
+      setDepartmentStatsLoading(true);
+      
+      // Fetch courses for the department head's department
+      const token = localStorage.getItem('token');
+      
+      // First, fetch dashboard data from the dashboard API
+      const dashboardResponse = await axios.get(`/api/v1/dashboard`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      // Then fetch all courses for more detailed information
+      const coursesResponse = await axios.get(`/api/v1/courses`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      // Get instructors in the department
+      const instructorsResponse = await axios.get(`/api/v1/users/instructors`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      // Filter instructors by department and school
+      const departmentInstructors = instructorsResponse.data.data.instructors.filter(instructor => 
+        instructor.department === user.department && instructor.school === user.school
+      );
+      
+      // Filter courses by department and school
+      const departmentCourses = coursesResponse.data.data.courses.filter(course => 
+        course.department === user.department && course.school === user.school
+      );
+      
+      // Get all courses from the same school (for school-wide statistics)
+      const schoolCourses = coursesResponse.data.data.courses.filter(course => 
+        course.school === user.school
+      );
+      
+      // Get dashboard stats
+      const dashboardData = dashboardResponse.data.data;
+      
+      // Calculate course status distribution
+      // Count assigned courses from school-wide courses
+      const assignedCoursesCount = schoolCourses.filter(course => 
+        course.instructor !== null && course.instructor !== undefined
+      ).length;
+      
+      const statusCounts = {
+        assigned: assignedCoursesCount, // School-wide assigned courses
+        departmentTotal: departmentCourses.length, // Total department courses
+        unassigned: departmentCourses.filter(course => !course.instructor).length, // Department unassigned courses
+        pending: departmentCourses.filter(course => course.status === 'pending_assignment' || course.status === 'pending').length // Department pending courses
+      };
+      
+      const statusDistribution = [
+        { name: 'Assigned', value: statusCounts.assigned, color: '#2ecc71' },
+        { name: 'Department', value: statusCounts.departmentTotal, color: '#3498db' },
+        { name: 'Unassigned', value: statusCounts.unassigned, color: '#e74c3c' },
+        { name: 'Pending', value: statusCounts.pending, color: '#f39c12' }
+      ];
+      
+      // Create a course status distribution for the pie chart
+      const courseTypeDistribution = [
+        { 
+          name: 'Department Courses', 
+          value: departmentCourses.length, 
+          color: '#3498db' 
+        },
+        { 
+          name: 'Assigned Courses', 
+          value: assignedCoursesCount, 
+          color: '#2ecc71' 
+        },
+        { 
+          name: 'Unassigned Courses', 
+          value: departmentCourses.filter(course => !course.instructor).length, 
+          color: '#e74c3c' 
+        },
+        { 
+          name: 'Pending Approvals', 
+          value: departmentCourses.filter(course => 
+            course.status === 'pending_assignment' || 
+            course.status === 'pending'
+          ).length, 
+          color: '#f39c12' 
+        }
+      ];
+      
+      // Filter out zero values to prevent empty segments
+      const filteredTypeDistribution = courseTypeDistribution.filter(item => item.value > 0);
+      
+      // Generate monthly stats (mock data for now as this would require historical data)
+      // In a real implementation, this would come from the backend with actual historical data
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+      const mockMonthlyStats = months.map(month => ({
+        month,
+        assigned: Math.floor(Math.random() * 10) + 10,
+        unassigned: Math.floor(Math.random() * 5) + 2,
+        pending: Math.floor(Math.random() * 3) + 1
+      }));
+      
+      // Set state with the fetched data
+      setDepartmentStats(dashboardData);
+      setDepartmentCourses(departmentCourses.length); // Use actual department course count
+      setAssignedCourses(statusCounts.assigned);
+      setUnassignedCourses(statusCounts.unassigned);
+      setPendingApprovals(statusCounts.pending);
+      setInstructorList(departmentInstructors);
+      setCourseStatusDistribution(statusDistribution);
+      setCourseTypeDistribution(filteredTypeDistribution); // Use filtered distribution
+      setMonthlyStats(mockMonthlyStats);
+      
+    } catch (error) {
+      console.error('Error fetching department head statistics:', error);
+      enqueueSnackbar('Failed to load department statistics', { variant: 'error' });
+    } finally {
+      setDepartmentStatsLoading(false);
     }
-  }, [dispatch, user?.role]);
+  };
+
+  useEffect(() => {
+    if (user) {
+      if (user.role === 'instructor') {
+        dispatch(getMyCourses());
+        fetchPaymentInfo();
+      } else if (user.role === 'department-head') {
+        fetchDepartmentHeadStats();
+      }
+    }
+  }, [user]);
 
   const calculateTotalHours = () => {
     if (!myCourses?.length) return 0;
@@ -157,6 +307,95 @@ const Dashboard = () => {
     <Container maxWidth={false} sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3, md: 4, lg: 5 } }}>
       <Grid container spacing={3} sx={{ maxWidth: '100%', mx: 'auto' }}>
         {/* Welcome Card */}
+        {user.role === 'department-head' && (
+          <Grid item xs={12}>
+            <Card 
+              elevation={3} 
+              sx={{ 
+                borderRadius: 2,
+                background: 'linear-gradient(135deg, #2c3e50 0%, #3498db 100%)',
+                color: 'white',
+                overflow: 'hidden',
+                position: 'relative',
+                transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                animation: 'fadeIn 0.8s ease-out',
+                '@keyframes fadeIn': {
+                  '0%': { opacity: 0, transform: 'translateY(-20px)' },
+                  '100%': { opacity: 1, transform: 'translateY(0)' }
+                },
+                '&:hover': {
+                  transform: 'translateY(-5px)',
+                  boxShadow: '0 12px 28px rgba(0, 0, 0, 0.2)'
+                }
+              }}
+            >
+              <Box 
+                sx={{ 
+                  position: 'absolute', 
+                  right: -20, 
+                  top: -20, 
+                  opacity: 0.1,
+                  transform: 'rotate(15deg)'
+                }}
+              >
+                <SchoolIcon sx={{ fontSize: 180 }} />
+              </Box>
+              <CardContent sx={{ position: 'relative', zIndex: 1, py: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <Avatar 
+                    sx={{ 
+                      bgcolor: 'white', 
+                      color: '#2c3e50',
+                      width: 56, 
+                      height: 56,
+                      boxShadow: 2,
+                      mr: 2 
+                    }}
+                  >
+                    <PersonIcon />
+                  </Avatar>
+                  <Box>
+                    <Typography variant="h5" fontWeight="bold" sx={{ mb: 0.5 }}>
+                      Welcome, {user.name}
+                    </Typography>
+                    <Typography variant="body1" sx={{ opacity: 0.9 }}>
+                      Department Head • {user.department} • {user.school}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2 }}>
+                  <Chip 
+                    icon={<CalendarTodayIcon />} 
+                    label={new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    sx={{ 
+                      bgcolor: 'rgba(255,255,255,0.15)', 
+                      color: 'white',
+                      '& .MuiChip-icon': { color: 'white' }
+                    }} 
+                  />
+                  <Chip 
+                    icon={<ClassIcon />} 
+                    label="Department Management"
+                    sx={{ 
+                      bgcolor: 'rgba(255,255,255,0.15)', 
+                      color: 'white',
+                      '& .MuiChip-icon': { color: 'white' }
+                    }} 
+                  />
+                  <Chip 
+                    icon={<AssignmentIcon />} 
+                    label="Course Oversight"
+                    sx={{ 
+                      bgcolor: 'rgba(255,255,255,0.15)', 
+                      color: 'white',
+                      '& .MuiChip-icon': { color: 'white' }
+                    }} 
+                  />
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
         {user.role === 'instructor' && (
           <Grid item xs={12}>
             <Card 
@@ -250,27 +489,497 @@ const Dashboard = () => {
         )}
 
         
-        {/* Welcome Section */}
-        <Grid item xs={12}>
-          <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="h4" gutterBottom>
-              Welcome, {user.name}!
-            </Typography>
-            <Typography variant="subtitle1" color="text.secondary">
-              Role: {user.role}
-            </Typography>
-            {user.school && (
-              <Typography variant="subtitle1" color="text.secondary">
-                School: {user.school}
-              </Typography>
-            )}
-            {user.department && (
-              <Typography variant="subtitle1" color="text.secondary">
-                Department: {user.department}
-              </Typography>
-            )}
-          </Paper>
-        </Grid>
+        {/* Department Head Statistics Section */}
+        {user.role === 'department-head' && (
+          <>
+            {/* Summary Cards */}
+            <Grid item xs={12} container spacing={3}>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card 
+                  elevation={2} 
+                  sx={{ 
+                    borderRadius: 2,
+                    height: '100%',
+                    transition: 'transform 0.3s, box-shadow 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-5px)',
+                      boxShadow: '0 8px 16px rgba(0, 0, 0, 0.1)'
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Box>
+                        <Typography color="text.secondary" variant="subtitle2" fontWeight="medium">
+                          Department Courses
+                        </Typography>
+                        <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                          {departmentStatsLoading ? <Skeleton width={60} /> : departmentCourses}
+                        </Typography>
+                      </Box>
+                      <Avatar sx={{ bgcolor: '#3498db', width: 40, height: 40 }}>
+                        <ClassIcon />
+                      </Avatar>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Total courses this semester
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              <Grid item xs={12} sm={6} md={3}>
+                <Card 
+                  elevation={2} 
+                  sx={{ 
+                    borderRadius: 2,
+                    height: '100%',
+                    transition: 'transform 0.3s, box-shadow 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-5px)',
+                      boxShadow: '0 8px 16px rgba(0, 0, 0, 0.1)'
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Box>
+                        <Typography color="text.secondary" variant="subtitle2" fontWeight="medium">
+                          Assigned Courses
+                        </Typography>
+                        <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                          {departmentStatsLoading ? <Skeleton width={60} /> : assignedCourses}
+                        </Typography>
+                      </Box>
+                      <Avatar sx={{ bgcolor: '#2ecc71', width: 40, height: 40 }}>
+                        <CheckCircleIcon />
+                      </Avatar>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Courses with instructors
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              <Grid item xs={12} sm={6} md={3}>
+                <Card 
+                  elevation={2} 
+                  sx={{ 
+                    borderRadius: 2,
+                    height: '100%',
+                    transition: 'transform 0.3s, box-shadow 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-5px)',
+                      boxShadow: '0 8px 16px rgba(0, 0, 0, 0.1)'
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Box>
+                        <Typography color="text.secondary" variant="subtitle2" fontWeight="medium">
+                          Unassigned Courses
+                        </Typography>
+                        <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                          {departmentStatsLoading ? <Skeleton width={60} /> : unassignedCourses}
+                        </Typography>
+                      </Box>
+                      <Avatar sx={{ bgcolor: '#e74c3c', width: 40, height: 40 }}>
+                        <WarningIcon />
+                      </Avatar>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Courses needing instructors
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              <Grid item xs={12} sm={6} md={3}>
+                <Card 
+                  elevation={2} 
+                  sx={{ 
+                    borderRadius: 2,
+                    height: '100%',
+                    transition: 'transform 0.3s, box-shadow 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-5px)',
+                      boxShadow: '0 8px 16px rgba(0, 0, 0, 0.1)'
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Box>
+                        <Typography color="text.secondary" variant="subtitle2" fontWeight="medium">
+                          Pending Approvals
+                        </Typography>
+                        <Typography variant="h4" sx={{ mt: 1, mb: 2 }}>
+                          {departmentStatsLoading ? <Skeleton width={60} /> : pendingApprovals}
+                        </Typography>
+                      </Box>
+                      <Avatar sx={{ bgcolor: '#f39c12', width: 40, height: 40 }}>
+                        <AssignmentIcon />
+                      </Avatar>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Courses awaiting approval
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+            
+            {/* Charts Section */}
+            <Grid item xs={12} md={8}>
+              <Paper 
+                elevation={3} 
+                sx={{ 
+                  p: 3, 
+                  borderRadius: 2,
+                  height: '100%',
+                  minHeight: 380
+                }}
+              >
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  mb: 3,
+                  justifyContent: 'space-between'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <AssignmentIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="h6" fontWeight="600" color="primary.main">
+                      Course Status Overview
+                    </Typography>
+                  </Box>
+                  <Chip 
+                    label="Current Semester" 
+                    size="small" 
+                    color="primary" 
+                    variant="outlined"
+                  />
+                </Box>
+                
+                {departmentStatsLoading ? (
+                  <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Skeleton variant="rectangular" width="100%" height={300} />
+                  </Box>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      data={courseStatusDistribution}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <RechartsTooltip 
+                        contentStyle={{ borderRadius: 8, boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}
+                        formatter={(value) => [`${value} courses`, 'Count']}
+                      />
+                      <Legend />
+                      <Bar 
+                        dataKey="value" 
+                        radius={[4, 4, 0, 0]}
+                      >
+                        {courseStatusDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </Paper>
+            </Grid>
+            
+            <Grid item xs={12} md={4}>
+              <Paper 
+                elevation={3} 
+                sx={{ 
+                  p: 3, 
+                  borderRadius: 2,
+                  height: '100%',
+                  minHeight: 380
+                }}
+              >
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  mb: 3,
+                  justifyContent: 'space-between'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <BookIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="h6" fontWeight="600" color="primary.main">
+                      Course Type Distribution
+                    </Typography>
+                  </Box>
+                </Box>
+                
+                {departmentStatsLoading ? (
+                  <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Skeleton variant="circular" width={300} height={300} />
+                  </Box>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={courseTypeDistribution}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {courseTypeDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(value, name, props) => [`${value} courses`, name]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </Paper>
+            </Grid>
+            
+            {/* Trend Chart */}
+            <Grid item xs={12}>
+              <Paper 
+                elevation={3} 
+                sx={{ 
+                  p: 3, 
+                  borderRadius: 2,
+                  height: '100%',
+                  minHeight: 380
+                }}
+              >
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  mb: 3,
+                  justifyContent: 'space-between'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <DateRangeIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="h6" fontWeight="600" color="primary.main">
+                      Course Status Trends
+                    </Typography>
+                  </Box>
+                  <Chip 
+                    label="Last 6 Months" 
+                    size="small" 
+                    color="primary" 
+                    variant="outlined"
+                  />
+                </Box>
+                
+                {departmentStatsLoading ? (
+                  <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Skeleton variant="rectangular" width="100%" height={300} />
+                  </Box>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart
+                      data={monthlyStats}
+                      margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient id="colorAssigned" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#2ecc71" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#2ecc71" stopOpacity={0.1}/>
+                        </linearGradient>
+                        <linearGradient id="colorUnassigned" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#e74c3c" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#e74c3c" stopOpacity={0.1}/>
+                        </linearGradient>
+                        <linearGradient id="colorPending" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f39c12" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#f39c12" stopOpacity={0.1}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis />
+                      <RechartsTooltip 
+                        contentStyle={{ borderRadius: 8, boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}
+                      />
+                      <Legend />
+                      <Area 
+                        type="monotone" 
+                        dataKey="assigned" 
+                        name="Assigned Courses"
+                        stroke="#2ecc71" 
+                        fillOpacity={1} 
+                        fill="url(#colorAssigned)" 
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="unassigned" 
+                        name="Unassigned Courses"
+                        stroke="#e74c3c" 
+                        fillOpacity={1} 
+                        fill="url(#colorUnassigned)" 
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="pending" 
+                        name="Pending Approvals"
+                        stroke="#f39c12" 
+                        fillOpacity={1} 
+                        fill="url(#colorPending)" 
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </Paper>
+            </Grid>
+            
+            {/* Action Required Courses */}
+            <Grid item xs={12}>
+              <Paper 
+                elevation={3} 
+                sx={{ 
+                  p: 3, 
+                  borderRadius: 2
+                }}
+              >
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  mb: 3,
+                  justifyContent: 'space-between'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <WarningIcon sx={{ mr: 1, color: '#f39c12' }} />
+                    <Typography variant="h6" fontWeight="600" color="primary.main">
+                      Courses Requiring Action
+                    </Typography>
+                  </Box>
+                  <Button 
+                    variant="contained" 
+                    size="small" 
+                    startIcon={<AssignmentIcon />}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    Manage Courses
+                  </Button>
+                </Box>
+                
+                {departmentStatsLoading ? (
+                  <Box>
+                    {[...Array(5)].map((_, index) => (
+                      <Box key={index} sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <Skeleton variant="circular" width={40} height={40} sx={{ mr: 2 }} />
+                        <Box sx={{ width: '100%' }}>
+                          <Skeleton variant="text" width="40%" />
+                          <Skeleton variant="text" width="25%" />
+                        </Box>
+                      </Box>
+                    ))}
+                  </Box>
+                ) : (
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight="600" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
+                      <AssignmentIcon sx={{ mr: 1, color: '#f39c12', fontSize: 20 }} />
+                      Pending Approvals ({pendingApprovals})
+                    </Typography>
+                    
+                    <Grid container spacing={2} sx={{ mb: 4 }}>
+                      {/* Mock pending approval courses */}
+                      {[...Array(Math.min(3, pendingApprovals))].map((_, index) => (
+                        <Grid item xs={12} sm={6} md={4} key={`pending-${index}`}>
+                          <Card 
+                            variant="outlined" 
+                            sx={{ 
+                              borderRadius: 2,
+                              borderLeft: '4px solid #f39c12',
+                              transition: 'transform 0.3s, box-shadow 0.3s',
+                              '&:hover': {
+                                transform: 'translateY(-5px)',
+                                boxShadow: '0 8px 16px rgba(0, 0, 0, 0.1)'
+                              }
+                            }}
+                          >
+                            <CardContent>
+                              <Typography variant="subtitle1" fontWeight="500">
+                                {['Introduction to Programming', 'Database Systems', 'Web Development', 'Data Structures', 'Computer Networks'][index % 5]}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                Course Code: {['CS101', 'CS305', 'CS210', 'CS401', 'CS310'][index % 5]}
+                              </Typography>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Chip 
+                                  size="small" 
+                                  label="Pending Approval" 
+                                  sx={{ 
+                                    bgcolor: 'rgba(243, 156, 18, 0.1)', 
+                                    color: '#f39c12',
+                                    fontWeight: 500
+                                  }} 
+                                />
+                                <Button size="small" color="primary">Review</Button>
+                              </Box>
+                            </CardContent>
+                          </Card>
+                        </Grid>
+                      ))}
+                    </Grid>
+                    
+                    <Typography variant="subtitle1" fontWeight="600" sx={{ mb: 2, mt: 3, display: 'flex', alignItems: 'center' }}>
+                      <WarningIcon sx={{ mr: 1, color: '#e74c3c', fontSize: 20 }} />
+                      Unassigned Courses ({unassignedCourses})
+                    </Typography>
+                    
+                    <Grid container spacing={2}>
+                      {/* Mock unassigned courses */}
+                      {[...Array(Math.min(3, unassignedCourses))].map((_, index) => (
+                        <Grid item xs={12} sm={6} md={4} key={`unassigned-${index}`}>
+                          <Card 
+                            variant="outlined" 
+                            sx={{ 
+                              borderRadius: 2,
+                              borderLeft: '4px solid #e74c3c',
+                              transition: 'transform 0.3s, box-shadow 0.3s',
+                              '&:hover': {
+                                transform: 'translateY(-5px)',
+                                boxShadow: '0 8px 16px rgba(0, 0, 0, 0.1)'
+                              }
+                            }}
+                          >
+                            <CardContent>
+                              <Typography variant="subtitle1" fontWeight="500">
+                                {['Artificial Intelligence', 'Machine Learning', 'Mobile Development', 'Cloud Computing', 'Software Engineering'][index % 5]}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                Course Code: {['CS420', 'CS430', 'CS350', 'CS440', 'CS330'][index % 5]}
+                              </Typography>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Chip 
+                                  size="small" 
+                                  label="Unassigned" 
+                                  sx={{ 
+                                    bgcolor: 'rgba(231, 76, 60, 0.1)', 
+                                    color: '#e74c3c',
+                                    fontWeight: 500
+                                  }} 
+                                />
+                                <Button size="small" color="primary">Assign</Button>
+                              </Box>
+                            </CardContent>
+                          </Card>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </Box>
+                )}
+              </Paper>
+            </Grid>
+          </>
+        )}
 
         {/* Statistics Section */}
         {user.role === 'instructor' && (

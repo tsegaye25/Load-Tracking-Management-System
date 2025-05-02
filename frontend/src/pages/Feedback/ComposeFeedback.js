@@ -13,7 +13,7 @@ import {
   IconButton,
   Breadcrumbs,
   Link as MuiLink,
-  CircularProgress,
+  Skeleton,
 } from '@mui/material';
 import { LoadingButton } from '@mui/lab';
 import {
@@ -128,9 +128,26 @@ const ComposeFeedback = () => {
   if (loadingRecipients) {
     return (
       <Container maxWidth="md" sx={{ py: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-          <CircularProgress />
+        <Box sx={{ mb: 4 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Skeleton variant="circular" width={40} height={40} sx={{ mr: 2 }} />
+            <Skeleton variant="text" width={250} height={40} />
+          </Box>
+          <Skeleton variant="text" width={300} height={24} />
         </Box>
+
+        <Paper sx={{ p: 3 }}>
+          <Box>
+            <Skeleton variant="rectangular" width="100%" height={60} sx={{ mb: 3 }} />
+            
+            <Skeleton variant="rectangular" width="100%" height={200} sx={{ mb: 3 }} />
+            
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+              <Skeleton variant="rectangular" width={100} height={40} />
+              <Skeleton variant="rectangular" width={140} height={40} />
+            </Box>
+          </Box>
+        </Paper>
       </Container>
     );
   }
