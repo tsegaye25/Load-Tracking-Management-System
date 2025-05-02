@@ -1191,8 +1191,6 @@ exports.getScientificDirectorCourses = async (req, res) => {
       status: 'scientific-director-rejected'
     });
     
-    console.log(`Found ${viceDirectorApprovedCount} courses with vice-director-approved status`);
-    console.log(`Found ${scientificDirectorRejectedCount} courses with scientific-director-rejected status`);
     
     // Query to include all relevant statuses for Scientific Director
     const query = {

@@ -117,9 +117,13 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
     // Show action buttons for finance-rejected courses
     if (isFinanceRejected) {
       return (
-        <Stack direction="row" spacing={2}>
+        <Stack 
+          direction={{ xs: 'column', sm: 'row' }} 
+          spacing={{ xs: 1, sm: 2 }}
+          alignItems="stretch"
+        >
           <Tooltip title="Approve these courses and resubmit to Finance">
-            <span>
+            <span style={{ width: '100%' }}>
               <LoadingButton
                 loading={actionLoading === 'approve'}
                 loadingPosition="start"
@@ -128,14 +132,19 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                 variant="outlined"
                 color="success"
                 onClick={() => handleAction('approve')}
+                fullWidth
                 sx={{
-                  minWidth: 160,
-                  fontSize: '0.75rem',
-                  py: 0.5,
+                  height: '100%',
+                  minWidth: { xs: '100%', sm: 160 },
+                  maxWidth: { sm: 200 },
+                  whiteSpace: 'nowrap',
+                  fontSize: { xs: '0.75rem', sm: '0.8125rem' },
+                  py: { xs: 0.75, sm: 0.5 },
                   px: 1.5,
                   borderRadius: '6px',
                   fontWeight: 600,
                   transition: 'all 0.2s',
+                  '& .MuiButton-startIcon': { mr: 0.5 },
                   '&:hover': {
                     transform: 'translateY(-1px)',
                     boxShadow: '0 2px 5px rgba(0,0,0,0.08)'
@@ -148,7 +157,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
           </Tooltip>
           
           <Tooltip title="Return these courses to Vice-Director for revision">
-            <span>
+            <span style={{ width: '100%' }}>
               <LoadingButton
                 loading={actionLoading === 'reject'}
                 loadingPosition="start"
@@ -157,14 +166,19 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                 variant="outlined"
                 color="warning"
                 onClick={() => handleAction('reject')}
+                fullWidth
                 sx={{
-                  minWidth: 160,
-                  fontSize: '0.75rem',
-                  py: 0.5,
+                  height: '100%',
+                  minWidth: { xs: '100%', sm: 160 },
+                  maxWidth: { sm: 200 },
+                  whiteSpace: 'nowrap',
+                  fontSize: { xs: '0.75rem', sm: '0.8125rem' },
+                  py: { xs: 0.75, sm: 0.5 },
                   px: 1.5,
                   borderRadius: '6px',
                   fontWeight: 600,
                   transition: 'all 0.2s',
+                  '& .MuiButton-startIcon': { mr: 0.5 },
                   '&:hover': {
                     transform: 'translateY(-1px)',
                     boxShadow: '0 2px 5px rgba(0,0,0,0.08)'
@@ -250,7 +264,12 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
     }
 
     return (
-      <Stack direction="row" spacing={1} justifyContent="flex-end">
+      <Stack 
+        direction={{ xs: 'column', sm: 'row' }} 
+        spacing={1} 
+        justifyContent="flex-end"
+        alignItems="stretch"
+      >
         <Tooltip title="Approve and forward to Finance">
           <span>
             <LoadingButton
@@ -260,9 +279,16 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
               startIcon={<ForwardIcon />}
               loading={actionLoading === 'approve'}
               onClick={() => handleAction('approve')}
+              fullWidth
               sx={{
-                minWidth: 200,
+                height: '100%',
+                minWidth: { xs: '100%', sm: 160 },
+                maxWidth: { sm: 200 },
+                whiteSpace: 'nowrap',
+                fontSize: { xs: '0.75rem', sm: '0.8125rem' },
+                py: { xs: 0.75, sm: 0.5 },
                 transition: 'all 0.2s',
+                '& .MuiButton-startIcon': { mr: 0.5 },
                 '&:hover': {
                   transform: 'translateY(-2px)',
                   boxShadow: (theme) => theme.shadows[4]
@@ -275,7 +301,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
         </Tooltip>
         {!isRejected && (
           <Tooltip title="Return to Vice-Director for review">
-            <span>
+            <span style={{ width: '100%' }}>
               <LoadingButton
                 size="small"
                 variant="contained"
@@ -283,9 +309,16 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                 startIcon={<ReplyIcon />}
                 loading={actionLoading === 'reject'}
                 onClick={() => handleAction('reject')}
+                fullWidth
                 sx={{
-                  minWidth: 200,
+                  height: '100%',
+                  minWidth: { xs: '100%', sm: 160 },
+                  maxWidth: { sm: 200 },
+                  whiteSpace: 'nowrap',
+                  fontSize: { xs: '0.75rem', sm: '0.8125rem' },
+                  py: { xs: 0.75, sm: 0.5 },
                   transition: 'all 0.2s',
+                  '& .MuiButton-startIcon': { mr: 0.5 },
                   '&:hover': {
                     transform: 'translateY(-2px)',
                     boxShadow: (theme) => theme.shadows[4]
@@ -303,24 +336,65 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
 
   return (
     <>
-      <TableRow sx={{ '& > *': { borderBottom: 'unset' } }}>
-        <TableCell>
+      <TableRow 
+        sx={{ 
+          '& > *': { borderBottom: 'unset' },
+          '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.light, 0.05) },
+          transition: 'background-color 0.2s'
+        }}
+      >
+        <TableCell sx={{ p: { xs: 1, sm: 2 } }}>
           <IconButton
             aria-label="expand row"
             size="small"
             onClick={() => setOpen(!open)}
+            sx={{ 
+              p: { xs: 0.5, sm: 1 },
+              '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1) } 
+            }}
           >
             {open ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
           </IconButton>
         </TableCell>
-        <TableCell component="th" scope="row">
-          {instructor.name}
+        <TableCell component="th" scope="row" sx={{ p: { xs: 1, sm: 2 } }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: { xs: '0.8125rem', sm: '0.875rem' } }}>
+            {instructor.name}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: { xs: '0.7rem', sm: '0.75rem' } }}>
+            {instructor.email}
+          </Typography>
         </TableCell>
-        <TableCell>{instructor.school}</TableCell>
-        <TableCell>{instructor.department}</TableCell>
-        <TableCell align="center">{instructor.courses.length}</TableCell>
-        <TableCell align="center">{calculateTotalWorkload(instructor.courses)}</TableCell>
-        <TableCell align="center">
+        <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' }, p: { xs: 1, sm: 2 } }}>
+          {instructor.school}
+        </TableCell>
+        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' }, p: { xs: 1, sm: 2 } }}>
+          {instructor.department}
+        </TableCell>
+        <TableCell align="center" sx={{ p: { xs: 1, sm: 2 } }}>
+          <Chip 
+            label={instructor.courses.length} 
+            color="primary" 
+            size="small" 
+            sx={{ 
+              minWidth: 30,
+              height: { xs: 22, sm: 24 },
+              fontSize: { xs: '0.7rem', sm: '0.75rem' } 
+            }} 
+          />
+        </TableCell>
+        <TableCell align="center" sx={{ p: { xs: 1, sm: 2 } }}>
+          <Chip 
+            label={instructor.totalWorkload || 0} 
+            color="secondary" 
+            size="small" 
+            sx={{ 
+              minWidth: 40,
+              height: { xs: 22, sm: 24 },
+              fontSize: { xs: '0.7rem', sm: '0.75rem' } 
+            }} 
+          />
+        </TableCell>
+        <TableCell align="right" sx={{ p: { xs: 1, sm: 2 } }}>
           {renderActionButtons()}
         </TableCell>
       </TableRow>
@@ -582,7 +656,8 @@ const ScientificDirectorCourses = () => {
   }, [instructors, filters.school]);
 
   const filteredInstructors = useMemo(() => {
-    return instructors.filter(instructor => {
+    // First filter instructors based on search and filters
+    const filtered = instructors.filter(instructor => {
       const matchesSearch = searchTerm === '' || 
         instructor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         instructor.courses.some(course =>
@@ -603,6 +678,43 @@ const ScientificDirectorCourses = () => {
       });
 
       return matchesSearch && matchesSchool && matchesDepartment && matchesStatus;
+    });
+    
+    // Then sort the filtered instructors to place pending ones at the top, then by latest status change
+    return filtered.sort((a, b) => {
+      // For Scientific Director, courses with vice-director-approved status are pending review
+      // Check if instructor A has pending courses (vice-director-approved)
+      const aHasPending = a.courses.some(course => 
+        course.status === 'vice-director-approved'
+      );
+      
+      // Check if instructor B has pending courses (vice-director-approved)
+      const bHasPending = b.courses.some(course => 
+        course.status === 'vice-director-approved'
+      );
+      
+      // First priority: pending courses at the top
+      if (aHasPending && !bHasPending) return -1;
+      if (!aHasPending && bHasPending) return 1;
+      
+      // Second priority: sort by latest status change time (most recent first)
+      // Get the latest updatedAt timestamp from each instructor's courses
+      const getLatestTimestamp = (instructor) => {
+        if (!instructor.courses || instructor.courses.length === 0) return 0;
+        
+        // Find the most recent updatedAt timestamp
+        return Math.max(
+          ...instructor.courses.map(course => 
+            course.updatedAt ? new Date(course.updatedAt).getTime() : 0
+          )
+        );
+      };
+      
+      const aLatestTime = getLatestTimestamp(a);
+      const bLatestTime = getLatestTimestamp(b);
+      
+      // Sort by most recent first (descending order)
+      return bLatestTime - aLatestTime;
     });
   }, [instructors, searchTerm, filters]);
 
@@ -1059,40 +1171,69 @@ const ScientificDirectorCourses = () => {
         </Grid>
       </Paper>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell />
-              <TableCell>Instructor</TableCell>
-              <TableCell>School</TableCell>
-              <TableCell>Department</TableCell>
-              <TableCell align="center">Courses</TableCell>
-              <TableCell align="center">Total Hours</TableCell>
-              <TableCell align="center">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredInstructors.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} align="center">
-                  <Typography variant="body1" color="textSecondary">
-                    No instructors found
-                  </Typography>
-                </TableCell>
+      {/* Responsive Table Container with horizontal scrolling for small screens */}
+      <Box sx={{ overflowX: 'auto', mb: 2 }}>
+        <TableContainer 
+          component={Paper}
+          sx={{
+            borderRadius: '8px',
+            boxShadow: (theme) => theme.shadows[2],
+            '&::-webkit-scrollbar': {
+              height: '8px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.2),
+              borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-track': {
+              backgroundColor: (theme) => theme.palette.grey[100],
+              borderRadius: '4px',
+            },
+          }}
+        >
+          <Table sx={{ minWidth: { xs: 650, sm: 800, md: 1000 } }}>
+            <TableHead>
+              <TableRow sx={{ 
+                backgroundColor: (theme) => alpha(theme.palette.primary.light, 0.1),
+                '& th': { 
+                  fontWeight: 'bold',
+                  whiteSpace: 'nowrap',
+                  fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                }
+              }}>
+                <TableCell sx={{ width: '40px', minWidth: '40px', p: { xs: 1, sm: 2 } }} />
+                <TableCell sx={{ minWidth: '160px', p: { xs: 1, sm: 2 } }}>Instructor</TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' }, minWidth: '120px', p: { xs: 1, sm: 2 } }}>School</TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' }, minWidth: '140px', p: { xs: 1, sm: 2 } }}>Department</TableCell>
+                <TableCell align="center" sx={{ minWidth: '80px', p: { xs: 1, sm: 2 } }}>Courses</TableCell>
+                <TableCell align="center" sx={{ minWidth: '100px', p: { xs: 1, sm: 2 } }}>Total Hours</TableCell>
+                <TableCell align="center" sx={{ minWidth: '200px', p: { xs: 1, sm: 2 } }}>Actions</TableCell>
               </TableRow>
-            ) : (
-              paginatedInstructors.map((instructor) => (
-                <InstructorRow
-                  key={instructor._id}
-                  instructor={instructor}
-                  onApprove={() => handleOpenApprovalDialog(instructor)}
-                  onReject={() => handleOpenRejectDialog(instructor)}
-                />
-              ))
-            )}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {filteredInstructors.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                    <Typography variant="body1" color="textSecondary">
+                      No instructors found
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedInstructors.map((instructor) => (
+                  <InstructorRow
+                    key={instructor._id}
+                    instructor={instructor}
+                    onApprove={() => handleOpenApprovalDialog(instructor)}
+                    onReject={() => handleOpenRejectDialog(instructor)}
+                  />
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Box>
+      <Paper sx={{ borderRadius: '8px', overflow: 'hidden' }}>
         <TablePagination
           rowsPerPageOptions={[5, 10, 25]}
           component="div"
@@ -1105,7 +1246,7 @@ const ScientificDirectorCourses = () => {
             setPage(0);
           }}
         />
-      </TableContainer>
+      </Paper>
 
       {/* Approval Dialog */}
       <Dialog
@@ -1143,10 +1284,10 @@ const ScientificDirectorCourses = () => {
           
           <Box sx={{ 
             p: 2, 
-            bgcolor: 'grey.50', 
+            bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.success.dark, 0.1) : 'grey.50', 
             borderRadius: '8px',
             border: '1px solid',
-            borderColor: 'grey.200',
+            borderColor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.success.main, 0.2) : 'grey.200',
             mb: 2
           }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -1181,7 +1322,7 @@ const ScientificDirectorCourses = () => {
             }}
           />
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2, bgcolor: 'grey.50' }}>
+        <DialogActions sx={{ px: 3, py: 2, bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.background.paper, 0.4) : 'grey.50' }}>
           <Button 
             onClick={() => setApprovalDialogOpen(false)}
             variant="outlined"
@@ -1248,10 +1389,10 @@ const ScientificDirectorCourses = () => {
           
           <Box sx={{ 
             p: 2, 
-            bgcolor: 'grey.50', 
+            bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.warning.dark, 0.1) : 'grey.50', 
             borderRadius: '8px',
             border: '1px solid',
-            borderColor: 'grey.200',
+            borderColor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.warning.main, 0.2) : 'grey.200',
             mb: 3
           }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -1284,7 +1425,7 @@ const ScientificDirectorCourses = () => {
             sx={{
               '& .MuiOutlinedInput-root': {
                 borderRadius: '8px',
-                bgcolor: 'white'
+                bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.background.paper, 0.6) : 'white'
               }
             }}
           />
@@ -1306,7 +1447,7 @@ const ScientificDirectorCourses = () => {
             }}
           />
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2, bgcolor: 'grey.50' }}>
+        <DialogActions sx={{ px: 3, py: 2, bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.background.paper, 0.4) : 'grey.50' }}>
           <Button 
             onClick={() => setRejectDialogOpen(false)}
             variant="outlined"
