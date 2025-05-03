@@ -728,13 +728,13 @@ const Layout = ({ children }) => {
               flexGrow: 0, 
               display: { xs: 'none', md: 'flex' }, // Hide on mobile
               alignItems: 'center', 
-              gap: 1,
+              gap: 1, // Consistent gap at all screen sizes
               background: 'transparent',
               py: 1,
-              px: 2,
+              px: 2, // Consistent padding at all screen sizes
               transition: 'all 0.3s ease',
               position: 'fixed',
-              right: '250px',
+              right: '300px', // Much larger space to prevent any overlap
               top: '15px',
               height: '80px',
               zIndex: 1200
@@ -743,13 +743,13 @@ const Layout = ({ children }) => {
               {/* Current Time Display */}
               <Box 
                 sx={{ 
-                  display: { xs: 'none', md: 'flex' },
+                  display: { xs: 'none', lg: 'flex' }, // Only show on large screens
                   alignItems: 'center',
                   backgroundColor: 'rgba(255, 255, 255, 0.1)',
                   borderRadius: '8px',
                   px: 1.5,
                   py: 0.5,
-                  mr: 2,
+                  mr: { md: 1, lg: 2 }, // Reduce margin on medium screens
                   border: '1px solid',
                   borderColor: darkMode ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'
                 }}
@@ -776,10 +776,13 @@ const Layout = ({ children }) => {
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
                     '&:hover': {
                       backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                    }
+                    },
+                    padding: { md: '4px', lg: '8px' }, // Smaller padding on medium screens
+                    minWidth: { md: '32px', lg: '40px' }, // Control minimum width
+                    minHeight: { md: '32px', lg: '40px' } // Control minimum height
                   }}
                 >
-                  {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+                  {darkMode ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
                 </IconButton>
               </Tooltip>
 
@@ -793,11 +796,14 @@ const Layout = ({ children }) => {
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
                     '&:hover': {
                       backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                    }
+                    },
+                    padding: { md: '4px', lg: '8px' }, // Smaller padding on medium screens
+                    minWidth: { md: '32px', lg: '40px' }, // Control minimum width
+                    minHeight: { md: '32px', lg: '40px' } // Control minimum height
                   }}
                 >
                   <Badge badgeContent={unreadCount} color="error">
-                    <NotificationsIcon />
+                    <NotificationsIcon fontSize="small" />
                   </Badge>
                 </IconButton>
               </Tooltip>
@@ -812,10 +818,13 @@ const Layout = ({ children }) => {
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
                     '&:hover': {
                       backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                    }
+                    },
+                    padding: { md: '4px', lg: '8px' }, // Smaller padding on medium screens
+                    minWidth: { md: '32px', lg: '40px' }, // Control minimum width
+                    minHeight: { md: '32px', lg: '40px' } // Control minimum height
                   }}
                 >
-                  <HelpIcon />
+                  <HelpIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
               
@@ -870,16 +879,18 @@ const Layout = ({ children }) => {
           sx={{ 
             display: { xs: 'none', md: 'flex' }, // Hide on mobile
             alignItems: 'center', 
-            gap: 1,
+            gap: 1, // Consistent gap at all screen sizes
             background: 'transparent',
             py: 1,
-            px: 2,
+            px: 2, // Consistent padding at all screen sizes
             transition: 'all 0.3s ease',
             position: 'fixed',
             right: '20px',
             top: '15px',
             height: '80px',
-            zIndex: 1300
+            zIndex: 1300,
+            width: 'auto', // Auto width to prevent sticking to the edge
+            minWidth: '180px' // Fixed minimum width at all screen sizes
           }}
         >
                 <Box sx={{ display: { xs: 'none', md: 'block' }, mr: 2 }}>
@@ -890,7 +901,12 @@ const Layout = ({ children }) => {
                       color: '#fff',
                       textShadow: '0 1px 2px rgba(0,0,0,0.3)',
                       textAlign: 'right',
-                      letterSpacing: '0.5px'
+                      letterSpacing: '0.5px',
+                      fontSize: { md: '0.85rem', lg: '1rem' }, // Responsive font size
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      maxWidth: { md: '120px', lg: '180px' } // Control text width based on screen size
                     }}
                   >
                     {user?.name}
@@ -919,6 +935,7 @@ const Layout = ({ children }) => {
                     onClick={handleOpenUserMenu} 
                     sx={{ 
                       p: 0.5,
+                      ml: 1, // Add left margin for spacing
                       transition: 'all 0.3s ease',
                       backgroundColor: 'transparent',
                       '&:hover': {

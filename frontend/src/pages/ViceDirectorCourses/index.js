@@ -1452,7 +1452,7 @@ const ViceDirectorCourses = () => {
   };
 
   // Filter instructors based on search and filters
-  const filteredInstructors = instructors.filter(instructor => {
+  let filteredInstructors = instructors.filter(instructor => {
     const matchesSearch = searchTerm.trim() === '' ||
       instructor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       instructor.courses.some(course => course.title.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -1473,6 +1473,32 @@ const ViceDirectorCourses = () => {
       ));
 
     return matchesSearch && matchesSchool && matchesDepartment && matchesStatus;
+  });
+  
+  // Sort instructors: pending at top, then by most recent status change
+  filteredInstructors.sort((a, b) => {
+    // Check if instructor has pending courses (dean-approved)
+    const aHasPending = a.courses.some(course => 
+      course.status === 'dean-approved' && 
+      !['vice-director-approved', 'vice-director-rejected', 'scientific-director-approved'].includes(course.status)
+    );
+    
+    const bHasPending = b.courses.some(course => 
+      course.status === 'dean-approved' && 
+      !['vice-director-approved', 'vice-director-rejected', 'scientific-director-approved'].includes(course.status)
+    );
+    
+    // Pending instructors always come first
+    if (aHasPending && !bHasPending) return -1;
+    if (!aHasPending && bHasPending) return 1;
+    
+    // If both are pending or both are not pending, sort by most recent update
+    // Find the most recently updated course for each instructor
+    const aLatestUpdate = Math.max(...a.courses.map(course => new Date(course.updatedAt).getTime()));
+    const bLatestUpdate = Math.max(...b.courses.map(course => new Date(course.updatedAt).getTime()));
+    
+    // Sort by most recent update (descending)
+    return bLatestUpdate - aLatestUpdate;
   });
 
   const handleBulkReject = async () => {
