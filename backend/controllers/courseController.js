@@ -536,10 +536,24 @@ exports.getSchoolCourses = catchAsync(async (req, res, next) => {
     return next(new AppError('You do not have permission to access school courses', 403));
   }
 
+  // First, find all instructors who have pending course requests
+  const instructorsWithPendingRequests = await Course.distinct('requestedBy', {
+    school: req.user.school,
+    status: 'pending',
+    requestedBy: { $exists: true, $ne: null }
+  });
+
+  console.log(`Found ${instructorsWithPendingRequests.length} instructors with pending requests`);
+
   // Get all courses in the dean's school with assigned instructors
+  // Exclude instructors who have pending course requests
   const courses = await Course.find({ 
     school: req.user.school,
-    instructor: { $exists: true, $ne: null }  // Only get courses with assigned instructors
+    instructor: { 
+      $exists: true, 
+      $ne: null,
+      $nin: instructorsWithPendingRequests // Exclude instructors with pending requests
+    }
   })
     .populate({
       path: 'instructor',
