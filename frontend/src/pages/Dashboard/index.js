@@ -262,7 +262,26 @@ const Dashboard = () => {
 
   const calculateTotalHours = () => {
     if (!myCourses?.length) return 0;
-    return myCourses.reduce((total, course) => total + (course.totalHours || 0), 0);
+    
+    // Calculate total workload using the formula:
+    // Total Hours = (Lecture Hours * Number of Sections Lecture) + 
+    //               (Lab Hours * 0.67 * Number of Sections Lab) + 
+    //               (Tutorial Hours * 0.67 * Number of Sections Tutorial) + 
+    //               HDP Hours + Position Hours + Batch Advisor Hours
+    
+    const totalHours = myCourses.reduce((total, course) => {
+      const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
+      const labLoad = (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 0);
+      const tutorialLoad = (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 0);
+      
+      // Calculate course workload
+      const courseWorkload = lectureLoad + labLoad + tutorialLoad;
+      
+      return total + courseWorkload;
+    }, 0) + (user.hdpHour || 0) + (user.positionHour || 0) + (user.batchAdvisor || 0);
+    
+    // Round to 2 decimal places
+    return parseFloat(totalHours.toFixed(2));
   };
 
   const calculateOverload = () => {

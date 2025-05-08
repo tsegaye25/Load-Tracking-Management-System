@@ -345,10 +345,10 @@ const Layout = ({ children }) => {
   };
 
   const adminMenuItems = [
-    { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-    { text: 'Courses', icon: <LibraryBooks />, path: '/courses' },
-    { text: 'Profile', icon: <Person />, path: '/profile' },
-    { text: 'Users', icon: <Group />, path: '/users' },
+    { text: 'Admin Dashboard', icon: <Dashboard />, path: '/admin/dashboard', description: 'System overview and statistics' },
+    { text: 'Courses', icon: <LibraryBooks />, path: '/courses', description: 'Manage all courses' },
+    { text: 'Users', icon: <Group />, path: '/users', description: 'Manage user accounts' },
+    { text: 'Profile', icon: <Person />, path: '/profile', description: 'Your profile settings' },
   ];
 
   const instructorMenuItems = [

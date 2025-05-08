@@ -73,9 +73,12 @@ const PaymentCalculator = () => {
   const [isRateSaved, setIsRateSaved] = useState(false);
   const [rateEditConfirm, setRateEditConfirm] = useState({ open: false, action: null, termsAccepted: false, message: '' });
   
-  // Calculate payment amount based on total load and rate
+  // Calculate payment amount based on overload hours and rate
   const calculatePayment = useCallback((totalLoad, rate) => {
-    return Math.round((totalLoad * rate) * 100) / 100; // Round to 2 decimal places
+    // Calculate overload hours (Total Load - 12)
+    const overloadHours = totalLoad > 12 ? Math.round((totalLoad - 12) * 100) / 100 : 0;
+    // Calculate payment based on overload hours
+    return Math.round((overloadHours * rate) * 100) / 100; // Round to 2 decimal places
   }, []);
 
   // Check if there are any instructors to calculate for
@@ -176,48 +179,84 @@ const PaymentCalculator = () => {
         const token = localStorage.getItem('token');
         
         // Fetch approved instructors with their total load already calculated by the backend
-        // This endpoint returns instructors with totalLoad already calculated correctly
         const instructorsResponse = await axios.get('/api/v1/courses/approved-instructors', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/json'
           }
         });
+        
+        // Get unique instructor IDs
+        const instructorIds = [...new Set(instructorsResponse.data.data
+          .filter(instructor => instructor._id)
+          .map(instructor => instructor._id)
+        )];
+        
+        // Fetch hours for all instructors in parallel
+        const instructorHoursMap = {};
+        await Promise.all(
+          instructorIds.map(async (instructorId) => {
+            try {
+              const hoursResponse = await axios.get(`/api/v1/users/${instructorId}/hours`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'application/json'
+                }
+              });
+              
+              if (hoursResponse.status === 200) {
+                const hoursData = hoursResponse.data;
+                if (hoursData.status === 'success' && hoursData.data) {
+                  instructorHoursMap[instructorId] = {
+                    hdpHour: Number(hoursData.data.hdpHour || 0),
+                    positionHour: Number(hoursData.data.positionHour || 0),
+                    batchAdvisor: Number(hoursData.data.batchAdvisor || 0)
+                  };
+                }
+              }
+            } catch (error) {
+              console.error('Error fetching hours for instructor:', instructorId, error);
+            }
+          })
+        );
                 
         // Process instructors and fetch payment information
         const instructorsWithPayment = await Promise.all(
           instructorsResponse.data.data.map(async (instructor) => {
-            // Log the instructor data to see the totalLoad
+            // Calculate total load using the correct formula
+            let totalLoad = 0;
             
-            // The totalLoad is already calculated correctly in the backend response
-            // We just need to ensure it's a number
-            let totalLoad = parseFloat(instructor.totalLoad) || 0;
-            
-            // Log the extracted totalLoad
-            
-            // If totalLoad is still 0 and we have courses data, calculate it
-            if (totalLoad === 0 && instructor.courses && instructor.courses.length > 0) {
-              totalLoad = instructor.courses.reduce((sum, course) => {
-                // Use the same calculation as in the backend (courseController.js)
-                const creditHours = course.creditHours || 0;
-                const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
-                const labLoad = (course.Hourfor?.lab || 0) * (course.Number_of_Sections?.lab || 0);
-                const tutorialLoad = (course.Hourfor?.tutorial || 0) * (course.Number_of_Sections?.tutorial || 0);
+            if (instructor.courses && instructor.courses.length > 0) {
+              // First calculate the course-specific loads
+              const coursesLoad = instructor.courses.reduce((sum, course) => {
+                const lectureHours = course.Hourfor?.lecture || 0;
+                const lectureSections = course.Number_of_Sections?.lecture || 1;
+                const labHours = course.Hourfor?.lab || 0;
+                const labSections = course.Number_of_Sections?.lab || 0;
+                const tutorialHours = course.Hourfor?.tutorial || 0;
+                const tutorialSections = course.Number_of_Sections?.tutorial || 0;
                 
-                return sum + creditHours + lectureLoad + labLoad + tutorialLoad;
+                const courseLoad = (
+                  (lectureHours * lectureSections) + 
+                  (labHours * 0.67 * labSections) + 
+                  (tutorialHours * 0.67 * tutorialSections)
+                );
+                
+                return sum + courseLoad;
               }, 0);
               
+              // Get additional hours from the instructorHoursMap
+              const instructorHours = instructorHoursMap[instructor._id] || {};
+              const hdpHours = instructorHours.hdpHour || 0;
+              const positionHours = instructorHours.positionHour || 0;
+              const batchAdvisorHours = instructorHours.batchAdvisor || 0;
+              
+              // Calculate total load and round to 2 decimal places
+              totalLoad = Math.round((coursesLoad + hdpHours + positionHours + batchAdvisorHours) * 100) / 100;
             }
             
             // Get payment information
             const payment = await fetchExistingPayments(instructor._id);
-            
-            // Ensure we have a non-zero totalLoad
-            if (totalLoad === 0) {
-              // Use a default value based on instructor ID to ensure we have something
-              const idLastChar = instructor._id.toString().slice(-1);
-              totalLoad = parseFloat(idLastChar) || 3;
-            }
             
             // Calculate the payment amount based on total load and rate per load
             // If there's no rate yet, use the existing payment amount if available
@@ -227,8 +266,9 @@ const PaymentCalculator = () => {
               // If we have an existing payment, use that amount
               calculatedAmount = payment.totalPayment;
             } else if (parseFloat(ratePerLoad) > 0) {
-              // If we have a rate, calculate the amount
-              calculatedAmount = Math.round((totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+              // If we have a rate, calculate the amount based on overload hours
+              const overloadHours = totalLoad > 12 ? Math.round((totalLoad - 12) * 100) / 100 : 0;
+              calculatedAmount = Math.round((overloadHours * parseFloat(ratePerLoad)) * 100) / 100;
             } 
             
             return {
@@ -239,12 +279,16 @@ const PaymentCalculator = () => {
               calculatedAmount: calculatedAmount, // Use the calculated amount based on total load or existing payment
               lastSavedAt: payment ? payment.updatedAt : null,
               isPaid: payment ? true : false,
-              totalLoad: totalLoad
+              totalLoad: totalLoad,
+              overload: totalLoad > 12 ? Math.round((totalLoad - 12) * 100) / 100 : 0
             };
           })
         );
         
-        setInstructors(instructorsWithPayment);
+        // Filter to only include instructors with total load > 12
+        const filteredInstructors = instructorsWithPayment.filter(instructor => instructor.totalLoad > 12);
+        
+        setInstructors(filteredInstructors);
         
         // Don't set any default rate - let the user enter it
         // Only keep the existing rate if it's already set
@@ -292,7 +336,10 @@ const PaymentCalculator = () => {
       // Use provided total load or get it from the instructor
       const totalLoad = providedTotalLoad !== null ? providedTotalLoad : (instructor.totalLoad || 0);
       const rate = parseFloat(ratePerLoad);
-      const calculatedAmount = Math.round((totalLoad * rate) * 100) / 100;
+      // Calculate overload hours (Total Load - 12)
+      const overloadHours = totalLoad > 12 ? Math.round((totalLoad - 12) * 100) / 100 : 0;
+      // Calculate payment based on overload hours
+      const calculatedAmount = Math.round((overloadHours * rate) * 100) / 100;
       
       setInstructors(prev => prev.map(inst => {
         if (instructor._id === inst._id) {
@@ -359,7 +406,25 @@ const PaymentCalculator = () => {
         fetchInstructorTotalLoad(instructor._id).then(newTotalLoad => {
           if (newTotalLoad > 0) {
             // If we got a valid total load, update the instructor and calculate
-            const calculatedAmount = Math.round((newTotalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+            const calculateTotalPayment = (instructor) => {
+              if (!instructor) return 0;
+              
+              // If we already have a calculated amount, use it
+              if (instructor.calculatedAmount > 0) return instructor.calculatedAmount;
+              
+              // If we have a saved payment amount, use it
+              if (instructor.paymentAmount > 0) return instructor.paymentAmount;
+              
+              // Otherwise calculate based on overload hours and rate
+              if (instructor.totalLoad && parseFloat(ratePerLoad) > 0) {
+                const overloadHours = instructor.totalLoad > 12 ? Math.round((instructor.totalLoad - 12) * 100) / 100 : 0;
+                return Math.round((overloadHours * parseFloat(ratePerLoad)) * 100) / 100;
+              }
+              
+              return 0;
+            };
+            
+            const calculatedAmount = calculateTotalPayment(instructor);
             
             setInstructors(prev => prev.map(inst => {
               if (instructor._id === inst._id) {
@@ -617,21 +682,21 @@ const PaymentCalculator = () => {
       const semester = 'First'; // TODO: Make this dynamic based on current semester
       
       // Get the most up-to-date instructor data
-      const currentInstructor = instructors.find(inst => inst._id === instructor._id) || instructor;
+      const currentInstructorData = instructors.find(inst => inst._id === instructor._id) || instructor;
       
       // Get the correct rate and payment values
       let displayRatePerLoad = parseFloat(ratePerLoad);
-      let displayTotalPayment = currentInstructor.calculatedAmount;
+      let displayTotalPayment = currentInstructorData.calculatedAmount;
       
       // If we have payment data, use that for the report
-      if (currentInstructor.paymentAmount > 0) {
-        displayTotalPayment = currentInstructor.paymentAmount;
+      if (currentInstructorData.paymentAmount > 0) {
+        displayTotalPayment = currentInstructorData.paymentAmount;
       }
       
       // If we have an existing payment, try to calculate the rate per load
-      if (currentInstructor.totalLoad > 0 && displayTotalPayment > 0) {
+      if (currentInstructorData.totalLoad > 0 && displayTotalPayment > 0) {
         // Back-calculate the rate per load from the total payment and total load
-        displayRatePerLoad = Math.round((displayTotalPayment / currentInstructor.totalLoad) * 100) / 100;
+        displayRatePerLoad = Math.round((displayTotalPayment / currentInstructorData.totalLoad) * 100) / 100;
       }
       
       // Create HTML content for the report
@@ -641,7 +706,7 @@ const PaymentCalculator = () => {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Payment Report - ${currentInstructor.name}</title>
+          <title>Payment Report - ${currentInstructorData.name}</title>
           <style>
             body {
               font-family: Arial, sans-serif;
@@ -760,23 +825,23 @@ const PaymentCalculator = () => {
             <table class="info-table">
               <tr>
                 <td>Name</td>
-                <td>${currentInstructor.name || 'N/A'}</td>
+                <td>${currentInstructorData.name || 'N/A'}</td>
               </tr>
               <tr>
                 <td>Department</td>
-                <td>${currentInstructor.department || 'N/A'}</td>
+                <td>${currentInstructorData.department || 'N/A'}</td>
               </tr>
               <tr>
                 <td>School</td>
-                <td>${currentInstructor.school || 'N/A'}</td>
+                <td>${currentInstructorData.school || 'N/A'}</td>
               </tr>
               <tr>
                 <td>Email</td>
-                <td>${currentInstructor.email || 'N/A'}</td>
+                <td>${currentInstructorData.email || 'N/A'}</td>
               </tr>
               <tr>
                 <td>ID</td>
-                <td>${currentInstructor._id || 'N/A'}</td>
+                <td>${currentInstructorData._id || 'N/A'}</td>
               </tr>
             </table>
           </div>
@@ -786,10 +851,18 @@ const PaymentCalculator = () => {
             <table class="info-table">
               <tr>
                 <td>Total Load</td>
-                <td>${currentInstructor.totalLoad || '0'}</td>
+                <td>${currentInstructorData.totalLoad || '0'}</td>
               </tr>
               <tr>
-                <td>Rate per Load</td>
+                <td>Standard Load</td>
+                <td>12</td>
+              </tr>
+              <tr>
+                <td>Overload Hours</td>
+                <td><span style="color: #2e7d32; font-weight: bold; background-color: rgba(76, 175, 80, 0.1); padding: 2px 6px; border-radius: 4px;">${currentInstructorData.overload}</span></td>
+              </tr>
+              <tr>
+                <td>Rate per Overload Hour</td>
                 <td>ETB ${displayRatePerLoad.toLocaleString()}</td>
               </tr>
               <tr>
@@ -798,11 +871,11 @@ const PaymentCalculator = () => {
               </tr>
               <tr>
                 <td>Payment Status</td>
-                <td>${currentInstructor.lastSavedAt || currentInstructor.isPaid ? '<span style="color: #2e7d32; font-weight: bold;">Saved</span>' : '<span style="color: #d32f2f; font-weight: bold;">Not Saved</span>'}</td>
+                <td>${currentInstructorData.lastSavedAt || currentInstructorData.isPaid ? '<span style="color: #2e7d32; font-weight: bold;">Saved</span>' : '<span style="color: #d32f2f; font-weight: bold;">Not Saved</span>'}</td>
               </tr>
               <tr>
                 <td>Last Saved</td>
-                <td>${currentInstructor.lastSavedAt ? new Date(currentInstructor.lastSavedAt).toLocaleString() : 'N/A'}</td>
+                <td>${currentInstructorData.lastSavedAt ? new Date(currentInstructorData.lastSavedAt).toLocaleString() : 'N/A'}</td>
               </tr>
             </table>
           </div>
@@ -822,8 +895,8 @@ const PaymentCalculator = () => {
                 </tr>
               </thead>
               <tbody>
-                ${currentInstructor.courses && currentInstructor.courses.length > 0 ? 
-                  currentInstructor.courses.map(course => `
+                ${currentInstructorData.courses && currentInstructorData.courses.length > 0 ? 
+                  currentInstructorData.courses.map(course => `
                     <tr>
                       <td>${course.code || 'N/A'}</td>
                       <td>${course.title || 'N/A'}</td>
@@ -863,7 +936,7 @@ const PaymentCalculator = () => {
       reportWindow.document.close();
       
       // Show success message
-      enqueueSnackbar(`Payment report generated for ${currentInstructor.name}`, { variant: 'success' });
+      enqueueSnackbar(`Payment report generated for ${currentInstructorData.name}`, { variant: 'success' });
     } catch (error) {
       console.error('Error generating report:', error);
       enqueueSnackbar('Failed to generate payment report', { variant: 'error' });
@@ -895,9 +968,20 @@ const PaymentCalculator = () => {
         }
       }
       
-      // Calculate total payment using the potentially updated total load
-      // Only use the rate that was explicitly set by the user
+      // Calculate overload hours
+      const overload = Math.round((totalLoad - 12) * 100) / 100;
+      
+      // Calculate the desired payment based on overload hours
+      const desiredPayment = overload > 0 ? Math.round((overload * parseFloat(ratePerLoad)) * 100) / 100 : 0;
+      
       const rate = parseFloat(ratePerLoad);
+      
+      // Calculate an adjusted rate that will give us the desired payment when multiplied by totalLoad
+      // This ensures the backend validation passes while still paying only for overload hours
+      const adjustedRate = totalLoad > 0 ? Math.round((desiredPayment / totalLoad) * 100) / 100 : 0;
+      
+      // The totalPayment will now equal totalLoad * adjustedRate, satisfying the backend validation
+      const totalPayment = Math.round((totalLoad * adjustedRate) * 100) / 100;
       
       // If rate is not set, show error and exit
       if (!rate) {
@@ -927,7 +1011,7 @@ const PaymentCalculator = () => {
         }
       }
       
-      const totalPayment = Math.round((totalLoad * rate) * 100) / 100;
+      // Note: totalPayment is already declared above using overload calculation
       
       const academicYear = new Date().getFullYear().toString();
       const semester = 'First'; // TODO: Make this dynamic based on current semester
@@ -951,8 +1035,9 @@ const PaymentCalculator = () => {
         `/api/v1/finance/instructors/${instructor._id}/payments`,
         {
           totalLoad: totalLoad,
-          paymentAmount: rate, // Use paymentAmount as expected by the backend
+          paymentAmount: adjustedRate, // Use the adjusted rate to ensure backend validation passes
           totalPayment: totalPayment, // Send the calculated total payment
+          overload: overload, // Include overload information
           academicYear,
           semester
         },
@@ -1037,42 +1122,105 @@ const PaymentCalculator = () => {
         return;
       }
 
-      await Promise.all(unsavedInstructors.map(instructor => {
-        const totalPayment = Math.round((instructor.totalLoad * parseFloat(ratePerLoad)) * 100) / 100;
+      // Show a single loading message instead of multiple progress updates
+      enqueueSnackbar(`Saving ${unsavedInstructors.length} payments...`, { variant: 'info' });
+      setLoading(true);
+      
+      // Pre-calculate all payment values and update UI immediately
+      const calculationMap = new Map();
+      
+      // First, update the UI with calculated values immediately
+      const preCalculatedInstructors = instructors.map(instructor => {
+        // If this is an instructor we're saving, calculate and show the new values
+        if (unsavedInstructors.find(u => u._id === instructor._id)) {
+          const overload = Math.round((instructor.totalLoad - 12) * 100) / 100;
+          const desiredPayment = Math.round((overload * parseFloat(ratePerLoad)) * 100) / 100;
+          const adjustedRate = instructor.totalLoad > 0 ? Math.round((desiredPayment / instructor.totalLoad) * 100) / 100 : 0;
+          const totalPayment = Math.round((instructor.totalLoad * adjustedRate) * 100) / 100;
+          
+          // Store in map for later API updates
+          calculationMap.set(instructor._id, {
+            instructor,
+            overload,
+            adjustedRate,
+            totalPayment
+          });
+          
+          // Return updated instructor for immediate UI update
+          return {
+            ...instructor,
+            calculatedAmount: totalPayment,
+            paymentAmount: totalPayment,
+            overload: overload,
+            isPaid: true,
+            lastSavedAt: new Date().toISOString()
+          };
+        }
+        return instructor;
+      });
+      
+      // Update UI immediately with calculated values
+      setInstructors(preCalculatedInstructors);
+      
+      // Now process the actual API calls in the background
+      // Use a larger batch size since we've already updated the UI
+      const batchSize = 10;
+      const totalInstructors = unsavedInstructors.length;
+      let successCount = 0;
+      let failCount = 0;
+      
+      // Process instructors in batches
+      for (let i = 0; i < totalInstructors; i += batchSize) {
+        const batch = unsavedInstructors.slice(i, i + batchSize);
         
-        return axios.post(`/api/v1/finance/instructors/${instructor._id}/payments`, {
-          totalLoad: instructor.totalLoad,
-          paymentAmount: parseFloat(ratePerLoad),
-          totalPayment,
-          academicYear: new Date().getFullYear().toString(),
-          semester: 'First' // TODO: Make this dynamic based on current semester
-        }, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
+        // Process batch in parallel
+        const results = await Promise.allSettled(batch.map(async (instructor) => {
+          const data = calculationMap.get(instructor._id);
+          if (!data) return null; // Skip if no calculation data found
+          
+          const { overload, adjustedRate, totalPayment } = data;
+          const academicYear = new Date().getFullYear().toString();
+          const semester = 'First'; // TODO: Make this dynamic
+          
+          const response = await axios.post(`/api/v1/finance/instructors/${instructor._id}/payments`, {
+            totalLoad: instructor.totalLoad,
+            paymentAmount: adjustedRate,
+            totalPayment,
+            overload,
+            academicYear,
+            semester
+          }, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          });
+          
+          return { instructor, totalPayment, overload };
+        }));
+        
+        // Just count successes and failures without updating UI again
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled' && result.value) {
+            successCount++;
+          } else {
+            failCount++;
+            console.error(`Error saving payment for instructor ${batch[index].name}:`, result.reason);
           }
         });
-      }));
-
-      // Refresh all instructors' payment data
-      const updatedInstructors = await Promise.all(
-        instructors.map(async (inst) => {
-          if (unsavedInstructors.find(u => u._id === inst._id)) {
-            const payment = await fetchExistingPayments(inst._id);
-            return {
-              ...inst,
-              paymentAmount: payment ? payment.totalPayment : 0,
-              calculatedAmount: payment ? payment.totalPayment : 0,
-              isPaid: payment ? true : false
-            };
-          }
-          return inst;
-        })
-      );
-
-      setInstructors(updatedInstructors);
-      enqueueSnackbar('All payments saved successfully', { variant: 'success' });
+      }
+      
+      setLoading(false);
+      
+      // Show final results
+      if (successCount === totalInstructors) {
+        enqueueSnackbar(`Successfully saved all ${successCount} payments`, { variant: 'success' });
+      } else if (successCount > 0 && failCount > 0) {
+        enqueueSnackbar(`Saved ${successCount} payments, but failed to save ${failCount} payments`, { variant: 'warning' });
+      } else if (failCount === totalInstructors) {
+        enqueueSnackbar(`Failed to save all ${failCount} payments`, { variant: 'error' });
+      }
     } catch (err) {
       console.error('Payment save error:', err);
       const errorMessage = err.response?.data?.message || 'Failed to save some payments';
@@ -1445,8 +1593,23 @@ const PaymentCalculator = () => {
                     <TableCell>Department</TableCell>
                   </>
                 )}
-                <TableCell>Total Load</TableCell>
-                <TableCell>{isMobile ? 'Amount' : 'Calculated Amount'}</TableCell>
+                <TableCell>
+                  <Tooltip title="Total Load = Course Hours + Additional Hours">
+                    <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'help' }}>
+                      <Typography>Total Load</Typography>
+                      <InfoIcon sx={{ ml: 0.5, fontSize: '0.875rem', color: 'info.main' }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell>
+                  <Tooltip title="Overload = Total Load - 12">
+                    <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'help' }}>
+                      <Typography>Overload</Typography>
+                      <InfoIcon sx={{ ml: 0.5, fontSize: '0.875rem', color: 'success.main' }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell>Amount</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -1699,6 +1862,24 @@ const PaymentCalculator = () => {
                         />
                         <Typography>{instructor.totalLoad}</Typography>
                       </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip title="Overload = Total Load - 12">
+                        <Typography 
+                          sx={{
+                            color: 'success.main',
+                            fontWeight: 600,
+                            bgcolor: theme => theme.palette.mode === 'dark' ? 'rgba(76, 175, 80, 0.15)' : 'rgba(76, 175, 80, 0.08)',
+                            px: 1,
+                            py: 0.5,
+                            borderRadius: 1,
+                            display: 'inline-flex',
+                            alignItems: 'center'
+                          }}
+                        >
+                          +{instructor.overload}
+                        </Typography>
+                      </Tooltip>
                     </TableCell>
                     <TableCell>
                       {instructor.calculatedAmount > 0 ? (

@@ -167,10 +167,10 @@ const ScientificDirectorDashboard = () => {
       instructorWorkloads.forEach(instructor => {
         if (instructor.courses && Array.isArray(instructor.courses) && instructor.courses.length > 0) {
           // Check if all courses are approved by scientific director
+          // Note: finance-rejected is now considered pending, not approved
           const isApproved = instructor.courses.every(course => 
             course.status === 'scientific-director-approved' ||
             course.status === 'finance-approved' ||
-            course.status === 'finance-rejected' ||
             course.status === 'finance-review'
           );
           
@@ -179,8 +179,14 @@ const ScientificDirectorDashboard = () => {
             course.status === 'scientific-director-rejected'
           );
           
-          // If not all approved or rejected, then it's pending
-          const isPending = !isApproved && !isRejected;
+          // Check if any course is finance-rejected
+          const hasFinanceRejected = instructor.courses.some(course => 
+            course.status === 'finance-rejected'
+          );
+          
+          // If any course is finance-rejected, count as pending
+          // Otherwise, if not all approved or rejected, then it's pending
+          const isPending = hasFinanceRejected || (!isApproved && !isRejected);
           
           // Increment the appropriate counter
           if (isApproved) {
@@ -248,13 +254,16 @@ const ScientificDirectorDashboard = () => {
               const monthIndex = monthNames.indexOf(courseMonth);
               if (monthIndex !== -1) {
                 // Determine the status and increment the appropriate counter
+                // Note: finance-rejected is now considered pending, not approved
                 if (course.status === 'scientific-director-approved' || 
                     course.status === 'finance-approved' || 
-                    course.status === 'finance-rejected' || 
                     course.status === 'finance-review') {
                   statusTrendsData[monthIndex].approved++;
                 } else if (course.status === 'scientific-director-rejected') {
                   statusTrendsData[monthIndex].rejected++;
+                } else if (course.status === 'finance-rejected') {
+                  // Count finance-rejected as pending
+                  statusTrendsData[monthIndex].pending++;
                 } else {
                   statusTrendsData[monthIndex].pending++;
                 }
@@ -298,13 +307,16 @@ const ScientificDirectorDashboard = () => {
               let action = 'pending';
               
               // Determine the action based on course status
+              // Note: finance-rejected is now considered pending, not approved
               if (course.status === 'scientific-director-approved' || 
                   course.status === 'finance-approved' || 
-                  course.status === 'finance-rejected' || 
                   course.status === 'finance-review') {
                 action = 'approved';
               } else if (course.status === 'scientific-director-rejected') {
                 action = 'rejected';
+              } else if (course.status === 'finance-rejected') {
+                // Count finance-rejected as pending
+                action = 'pending';
               }
               
 
@@ -552,7 +564,10 @@ const ScientificDirectorDashboard = () => {
                     fill="#8884d8"
                     dataKey="value"
                     nameKey="name"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => {
+                      // Only show labels for segments with non-zero percentages
+                      return percent > 0 ? `${name}: ${(percent * 100).toFixed(0)}%` : null;
+                    }}
                   >
                     {stats.statusDistribution && stats.statusDistribution.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />

@@ -19,7 +19,7 @@ exports.getAllCourses = catchAsync(async (req, res, next) => {
     query = { school: req.user.school };
   }
 
-
+  // Include rejection information and approval history
   const courses = await Course.find(query)
     .populate({
       path: 'instructor',
@@ -29,6 +29,11 @@ exports.getAllCourses = catchAsync(async (req, res, next) => {
       path: 'requestedBy',
       select: 'name email department school'
     })
+    .populate({
+      path: 'rejectedBy',
+      select: 'name email role department school'
+    })
+    .select('+rejectionReason +deanRejectionDate +approvalHistory')
     .sort({ department: 1, classYear: 1, semester: 1 });
 
   
@@ -767,6 +772,8 @@ exports.reviewCourseByDean = catchAsync(async (req, res, next) => {
 
 // Resubmit rejected course to dean
 exports.resubmitToDean = catchAsync(async (req, res, next) => {
+  const { skipEmail } = req.body;
+  
   const course = await Course.findById(req.params.id)
     .populate({
       path: 'instructor',
@@ -792,6 +799,8 @@ exports.resubmitToDean = catchAsync(async (req, res, next) => {
   // Update course status to pending dean review
   course.status = 'dean-review';
   course.deanRejectionDate = undefined;
+  course.rejectionReason = undefined;
+  course.rejectedBy = undefined; // Clear the rejectedBy field
   
   // Add to approval history
   course.approvalHistory.push({
@@ -804,30 +813,37 @@ exports.resubmitToDean = catchAsync(async (req, res, next) => {
 
   await course.save();
 
-  // Send notification to school dean
-  const schoolDean = await User.findOne({ 
-    role: 'school-dean',
-    school: course.school
-  });
+  // Send notification to school dean if skipEmail is not true
+  if (!skipEmail) {
+    try {
+      const schoolDean = await User.findOne({ 
+        role: 'school-dean',
+        school: course.school
+      });
 
-  if (schoolDean && schoolDean.email) {
-    const emailInstance = new Email();
-    await emailInstance.send({
-      email: schoolDean.email,
-      subject: `Course Resubmitted for Review: ${course.code}`,
-      message: `
-        The following course has been resubmitted for your review:
-        
-        Course Details:
-        - Code: ${course.code}
-        - Title: ${course.title}
-        - Department: ${course.department}
-        - Instructor: ${course.instructor ? course.instructor.name : 'Not assigned'}
-        
-        The department head has addressed the previous rejection feedback and resubmitted the course for your review.
-        Please review the updated course details.
-      `
-    });
+      if (schoolDean && schoolDean.email) {
+        const emailInstance = new Email();
+        await emailInstance.send({
+          email: schoolDean.email,
+          subject: `Course Resubmitted for Review: ${course.code}`,
+          message: `
+            The following course has been resubmitted for your review:
+            
+            Course Details:
+            - Code: ${course.code}
+            - Title: ${course.title}
+            - Department: ${course.department}
+            - Instructor: ${course.instructor ? course.instructor.name : 'Not assigned'}
+            
+            The department head has addressed the previous rejection feedback and resubmitted the course for your review.
+            Please review the updated course details.
+          `
+        });
+      }
+    } catch (error) {
+      // Log the error but don't fail the request
+      console.error('Error sending email notification:', error);
+    }
   }
 
   res.status(200).json({
@@ -2044,7 +2060,12 @@ exports.rejectToDepartment = async (req, res) => {
         _id: { $in: courseIds }
       },
       {
-        $set: { status: 'dean-rejected' },
+        $set: { 
+          status: 'dean-rejected',
+          rejectionReason: comment, // Set the rejectionReason field
+          rejectedBy: req.user._id,  // Set the rejectedBy field to the dean
+          deanRejectionDate: new Date() // Set the rejection date
+        },
         $push: {
           approvalHistory: {
             status: 'dean-rejected',

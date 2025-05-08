@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
 import { 
   Container, 
   Box, 
@@ -46,7 +47,12 @@ import {
   TableRow, 
   TableCell, 
   TableBody,
-  Skeleton
+  Skeleton,
+  Avatar,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText
 } from '@mui/material';
 import { LoadingButton } from '@mui/lab';
 import { ToastContainer } from 'react-toastify';
@@ -74,7 +80,9 @@ import {
   AssignmentTurnedIn as AssignmentTurnedInIcon,
   AddCircleOutline as AddCircleOutlineIcon,
   HourglassEmpty as HourglassEmptyIcon,
-  PeopleAlt as PeopleAltIcon
+  PeopleAlt as PeopleAltIcon,
+  Info as InfoIcon,
+  Class as ClassIcon
 } from '@mui/icons-material';
 import * as Yup from 'yup';
 import { useFormik } from 'formik';
@@ -104,25 +112,29 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
 
   useEffect(() => {
     const fetchInstructorHours = async () => {
-      if (course.instructor) {
-        try {
-          const response = await fetch(`http://localhost:5000/api/v1/users/hours/${course.instructor._id}`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
+      if (course.instructor && user) {
+        // Only fetch hours if user has one of the required roles
+        const requiredRoles = ['scientific-director', 'vice-director', 'department-head', 'finance'];
+        if (requiredRoles.includes(user.role)) {
+          try {
+            const response = await fetch(`http://localhost:5000/api/v1/users/hours/${course.instructor._id}`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            });
+            const data = await response.json();
+            if (data.status === 'success') {
+              setInstructorHours(data.data);
             }
-          });
-          const data = await response.json();
-          if (data.status === 'success') {
-            setInstructorHours(data.data);
+          } catch (error) {
+            console.error('Error fetching instructor hours:', error);
           }
-        } catch (error) {
-          console.error('Error fetching instructor hours:', error);
         }
       }
     };
 
     fetchInstructorHours();
-  }, [course.instructor]);
+  }, [course.instructor, user]);
 
   // Department Head Permissions
   const canReviewCourse = isDepartmentHead && 
@@ -146,17 +158,36 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
     course.school === user.school &&
     course.status === 'rejected';
 
-  const getRejectorRole = (rejectedBy) => {
-    if (!rejectedBy) return 'Department Head'; 
-    switch (rejectedBy.role) {
-      case 'department-head':
-        return 'Department Head';
-      case 'school-dean':
-        return 'School Dean';
-      case 'vice-director':
-        return 'Vice Director';
-      default:
-        return 'Department Head'; 
+  const getRejectorRole = (rejectedBy, status) => {
+    // If we have rejectedBy information, use that first
+    if (rejectedBy && rejectedBy.role) {
+      switch (rejectedBy.role) {
+        case 'department-head':
+          return 'Department Head';
+        case 'school-dean':
+          return 'School Dean';
+        case 'vice-scientific-director':
+          return 'Vice Scientific Director';
+        case 'scientific-director':
+          return 'Scientific Director';
+        case 'finance':
+          return 'Finance';
+        default:
+          return 'Administrator';
+      }
+    }
+    
+    // Fallback to status-based determination if rejectedBy is not available
+    if (status === 'dean-rejected') {
+      return 'School Dean';
+    } else if (status === 'department-head-rejected') {
+      return 'Department Head';
+    } else if (status === 'vice-director-rejected') {
+      return 'Vice Scientific Director';
+    } else if (status === 'scientific-director-rejected') {
+      return 'Scientific Director';
+    } else {
+      return 'Administrator';
     }
   };
 
@@ -206,11 +237,25 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
     hour12: true
   }) : '';
   
-  // Get rejection reason if available
-  const rejectionReason = course.rejectionReason || 'No reason provided';
+  // Get rejection reason based on status
+  let rejectionReason = 'No reason provided';
+  
+  // Always use the rejectionReason field regardless of status
+  // This ensures we always show the correct rejection reason
+  rejectionReason = course.rejectionReason || 'No reason provided';
+  
+  // For debugging
+  if (course.status.includes('rejected')) {
+    console.log(`Course ${course.code} rejection info:`, {
+      status: course.status,
+      reason: course.rejectionReason,
+      rejectedBy: course.rejectedBy,
+      deanRejectionDate: course.deanRejectionDate
+    });
+  }
   
   // Get rejector role
-  const rejectorRole = getRejectorRole(course.rejectedBy);
+  const rejectorRole = getRejectorRole(course.rejectedBy, course.status);
                     
   return (
     <Box sx={{ position: 'relative', mb: 2 }}>
@@ -232,6 +277,25 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
           }
         }}
       >
+        {/* Rejection banner at the top */}
+        {isRejected && (
+          <Box 
+            sx={{
+              p: 1.5,
+              bgcolor: (theme) => alpha(theme.palette.error.light, 0.1),
+              borderBottom: '1px solid',
+              borderColor: (theme) => alpha(theme.palette.error.main, 0.2),
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1
+            }}
+          >
+            <CancelIcon fontSize="small" color="error" />
+            <Typography variant="body2" sx={{ fontWeight: 500, color: 'error.main' }}>
+              {course.status === 'dean-rejected' ? 'Rejected by School Dean' : 'Rejected by Department Head'} • {rejectionDate}
+            </Typography>
+          </Box>
+        )}
       {/* Card Header */}
       <Box
         sx={{
@@ -343,6 +407,41 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
         }}>
           {canReviewCourse && (
             <>
+              {/* Show Edit/Delete buttons only if: */}
+              {/* 1. Course is not yet approved by department head (status is pending or department-head-review) */}
+              {/* 2. OR course was rejected by School Dean (status is dean-rejected) */}
+              {/* 3. OR course is unassigned (no instructor assigned) */}
+              {(course.status === 'pending' || 
+                course.status === 'department-head-review' || 
+                course.status === 'dean-rejected' ||
+                !course.instructor) && (
+                <>
+                  <Tooltip title="Edit Course">
+                    <IconButton 
+                      size="small" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit(course);
+                      }}
+                      sx={{ bgcolor: alpha('#000', 0.04) }}
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete Course">
+                    <IconButton 
+                      size="small" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(course);
+                      }}
+                      sx={{ bgcolor: alpha('#000', 0.04) }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </>
+              )}
               {canAssignInstructor && (
                 <Button
                   variant="contained"
@@ -358,30 +457,6 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                   Assign
                 </Button>
               )}
-              <Tooltip title="Edit Course">
-                <IconButton 
-                  size="small" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(course);
-                  }}
-                  sx={{ bgcolor: alpha('#000', 0.04) }}
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Delete Course">
-                <IconButton 
-                  size="small" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(course);
-                  }}
-                  sx={{ bgcolor: alpha('#000', 0.04) }}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
               {course.status === 'pending' && (
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <Button
@@ -681,11 +756,16 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
             </Box>
           </Grid>
 
-          {/* Rejection Information - Only shown for rejected courses */}
+          {/* Rejection Information - Shown for rejected courses */}
           {isRejected && (
             <>
-              {/* Full rejection details - Only shown to the instructor who requested the course */}
-              {(isInstructor && ((course.requestedBy && course.requestedBy._id === user._id) || (course.rejectedInstructor && course.rejectedInstructor.id === user._id))) && (
+              {/* Show rejection reason - Always shown to the instructor who requested the course */}
+              {/* Department heads can only see rejection details for courses rejected by School Deans */}
+              {((isInstructor && course.requestedBy && course.requestedBy._id === user._id) || 
+               /* Or if user is the instructor assigned to the course when it was rejected */
+               (isInstructor && course.rejectedInstructor && course.rejectedInstructor.id === user._id) ||
+               /* Or if user is a department head and the course was rejected by a School Dean */
+               (isDepartmentHead && course.status === 'dean-rejected')) && (
                 <Grid item xs={12}>
                   <Box 
                     sx={{ 
@@ -714,84 +794,12 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                       }}
                     >
                       <CancelIcon fontSize="small" />
-                      Rejection Details
+                      Rejection Reason
                     </Typography>
                     
-                    <Grid container spacing={2} sx={{ mt: 0.5 }}>
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          Rejected By
-                        </Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                          {rejectorRole}
-                        </Typography>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          Rejection Date & Time
-                        </Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                          {rejectionDate}{rejectionTime ? ` at ${rejectionTime}` : ''}
-                        </Typography>
-                      </Grid>
-                      <Grid item xs={12}>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          Reason for Rejection
-                        </Typography>
-                        <Paper elevation={0} sx={{ 
-                          p: { xs: 2, md: 3 }, 
-                          bgcolor: (theme) => alpha(theme.palette.background.paper, 0.7),
-                          border: '1px solid',
-                          borderColor: (theme) => alpha(theme.palette.grey[300], 0.8),
-                          borderRadius: 1,
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                        }}>
-                          <Box sx={{ 
-                            display: 'flex', 
-                            flexDirection: 'column',
-                            gap: 1.5 
-                          }}>
-                            <Box sx={{ 
-                              display: 'flex', 
-                              alignItems: 'flex-start',
-                              gap: 1.5 
-                            }}>
-                              <Box sx={{
-                                width: 24,
-                                height: 24,
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                bgcolor: 'error.main',
-                                color: 'white',
-                                flexShrink: 0,
-                                mt: 0.25
-                              }}>
-                                <Typography variant="caption" sx={{ fontWeight: 'bold' }}>!</Typography>
-                              </Box>
-                              <Box>
-                                <Typography variant="subtitle2" color="error.main" gutterBottom sx={{ fontWeight: 600 }}>
-                                  Course Assignment Request Declined
-                                </Typography>
-                                <Typography variant="body2" sx={{ 
-                                  color: 'text.primary',
-                                  lineHeight: 1.6,
-                                  fontFamily: '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-                                  letterSpacing: 0.1
-                                }}>
-                                  {rejectionReason}
-                                </Typography>
-                              </Box>
-                            </Box>
-                            <Divider sx={{ my: 1 }} />
-                            <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', pl: 5 }}>
-                              If you have any questions regarding this decision, please contact the department head or academic affairs office.
-                            </Typography>
-                          </Box>
-                        </Paper>
-                      </Grid>
-                    </Grid>
+                    <Typography variant="body1" sx={{ mt: 1.5 }}>
+                      {rejectionReason}
+                    </Typography>
                   </Box>
                 </Grid>
               )}
@@ -800,42 +808,13 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
         </Grid>
       </Box>
     </Paper>
-    
-    {/* Rejection indicator below the card - visible to everyone */}
-    {isRejected && (
-      <Paper
-        elevation={1}
-        sx={{
-          mt: -1,
-          mb: 2,
-          ml: 'auto',
-          mr: 2,
-          width: 'fit-content',
-          borderRadius: '0 0 12px 12px',
-          overflow: 'hidden',
-          backgroundColor: 'error.main',
-          color: 'white',
-          padding: '6px 16px',
-          fontSize: '0.75rem',
-          fontWeight: 'bold',
-          textTransform: 'uppercase',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.5,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-        }}
-      >
-        <CancelIcon fontSize="small" />
-        <Typography variant="caption" sx={{ fontWeight: 600 }}>
-          Rejected by {rejectorRole} • {rejectionDate}
-        </Typography>
-      </Paper>
-    )}
+    {/* Removed the rejection indicator below the card */}
   </Box>
   );
 };
 
 const Courses = () => {
+  const theme = useTheme();
   const dispatch = useDispatch();
   const { courses, loading } = useSelector((state) => {
     return state.course;
@@ -861,11 +840,14 @@ const Courses = () => {
   
   // Filter states - removed semester and class year filters
   const [filterDepartment, setFilterDepartment] = useState('');
+  const [filterSchool, setFilterSchool] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [openFilterDialog, setOpenFilterDialog] = useState(false);
 
   const [resubmitCourse, setResubmitCourse] = useState(null);
   const [resubmitDialogOpen, setResubmitDialogOpen] = useState(false);
+  const [confirmResubmitChecked, setConfirmResubmitChecked] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [courseToDelete, setCourseToDelete] = useState(null);
@@ -969,11 +951,16 @@ const Courses = () => {
       );
     }
 
+    // Apply school filter
+    if (filterSchool) {
+      filtered = filtered.filter(course => course.school === filterSchool);
+    }
+
     // Apply department filter
     if (filterDepartment) {
       filtered = filtered.filter(course => course.department === filterDepartment);
     }
-    
+
     // Apply status filter - enhanced with more clear status categories
     if (filterStatus) {
       if (filterStatus === 'pending') {
@@ -1006,6 +993,36 @@ const Courses = () => {
         );
       }
     }
+    
+    // Sort courses to prioritize pending, unassigned, and recently approved/assigned courses
+    filtered.sort((a, b) => {
+      // Priority 1: Pending courses (highest priority)
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      
+      // Priority 2: Unassigned courses
+      const aUnassigned = !a.instructor && !a.requestedBy;
+      const bUnassigned = !b.instructor && !b.requestedBy;
+      if (aUnassigned && !bUnassigned) return -1;
+      if (!aUnassigned && bUnassigned) return 1;
+      
+      // Priority 3: Recently approved courses
+      if (a.status === 'department-head-approved' && b.status !== 'department-head-approved') return -1;
+      if (a.status !== 'department-head-approved' && b.status === 'department-head-approved') return 1;
+      
+      // Priority 4: Recently assigned courses (courses with instructors but not yet approved)
+      const aRecentlyAssigned = a.instructor && a.status === 'dean-review';
+      const bRecentlyAssigned = b.instructor && b.status === 'dean-review';
+      if (aRecentlyAssigned && !bRecentlyAssigned) return -1;
+      if (!aRecentlyAssigned && bRecentlyAssigned) return 1;
+      
+      // Priority 5: Dean rejected courses (need attention)
+      if (a.status === 'dean-rejected' && b.status !== 'dean-rejected') return -1;
+      if (a.status !== 'dean-rejected' && b.status === 'dean-rejected') return 1;
+      
+      // Default: Sort by update date (most recent first)
+      return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+    });
 
     setFilteredCourses(filtered);
   }, [courses, filterValue, filterDepartment, filterStatus, user?.role, user?.school, user?.department]);
@@ -1520,27 +1537,73 @@ const Courses = () => {
     if (!resubmitCourse) return;
 
     try {
+      // Set loading state
+      setIsSubmitting(true);
+      
       const response = await fetch(`${API_BASE_URL}/api/v1/courses/${resubmitCourse._id}/resubmit-to-dean`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
+        body: JSON.stringify({
+          skipEmail: true // Skip email notification to avoid hitting email limits
+        }),
       });
 
+      let errorData;
+      let isEmailLimitError = false;
+      
       if (!response.ok) {
-        const errorData = await response.json();
+        errorData = await response.json();
         console.error('Resubmit error response:', errorData);
-        throw new Error(errorData.message || 'Failed to resubmit course');
+        
+        // Check if this is an email limit error
+        isEmailLimitError = errorData.message && errorData.message.includes('email limit is reached');
+        
+        // If it's not an email limit error, throw the error
+        if (!isEmailLimitError) {
+          throw new Error(errorData.message || 'Failed to resubmit course');
+        }
       }
 
-      toast.success('Course resubmitted to School Dean successfully');
+      // Update the course in the local state immediately
+      const updatedCourses = courses.map(course => 
+        course._id === resubmitCourse._id ? { ...course, status: 'dean-review' } : course
+      );
+      
+      // Update filtered courses as well
+      const updatedFilteredCourses = filteredCourses.map(course => 
+        course._id === resubmitCourse._id ? { ...course, status: 'dean-review' } : course
+      );
+      
+      // Close dialog and reset states
       setResubmitDialogOpen(false);
       setResubmitCourse(null);
-      dispatch(fetchCourses()); // Refresh the courses list
+      setConfirmResubmitChecked(false);
+      
+      // Update the local state first for immediate UI feedback
+      setFilteredCourses(updatedFilteredCourses);
+      
+      // Show appropriate toast message
+      if (isEmailLimitError) {
+        toast.warning('Course resubmitted, but email notification failed due to email limit. The School Dean will still be able to review your course.');
+      } else {
+        toast.success('Course resubmitted to School Dean successfully');
+      }
+      
+      // Then refresh from the server to ensure data consistency
+      try {
+        await dispatch(fetchCourses()).unwrap();
+      } catch (refreshError) {
+        console.error('Error refreshing courses after resubmit:', refreshError);
+        // Even if refresh fails, we've already updated the UI
+      }
     } catch (error) {
       console.error('Error resubmitting course:', error);
       toast.error(error.message || 'Failed to resubmit course');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1954,6 +2017,24 @@ const Courses = () => {
                 />
               </Grid>
               
+              {/* School filter - inline */}
+              <Grid item xs={12} sm={6} md={3} lg={2.5}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>School</InputLabel>
+                  <Select
+                    value={filterSchool}
+                    onChange={(e) => setFilterSchool(e.target.value)}
+                    label="School"
+                    sx={{ borderRadius: 1.5 }}
+                  >
+                    <MenuItem value="">All Schools</MenuItem>
+                    {schools.map((school) => (
+                      <MenuItem key={school} value={school}>{school}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
               {/* Department filter - inline */}
               <Grid item xs={12} sm={6} md={3} lg={2.5}>
                 <FormControl fullWidth size="small">
@@ -1965,9 +2046,23 @@ const Courses = () => {
                     sx={{ borderRadius: 1.5 }}
                   >
                     <MenuItem value="">All Departments</MenuItem>
-                    {departments[user.school] && departments[user.school].map((dept) => (
-                      <MenuItem key={dept} value={dept}>{dept}</MenuItem>
-                    ))}
+                    {filterSchool && departments[filterSchool] ? (
+                      departments[filterSchool].map((dept) => (
+                        <MenuItem key={dept} value={dept}>{dept}</MenuItem>
+                      ))
+                    ) : (
+                      // Create a flat array of MenuItems
+                      Object.entries(departments).flatMap(([school, depts]) => [
+                        <MenuItem key={`${school}-header`} disabled sx={{ fontWeight: 600, pl: 2 }}>
+                          {school}
+                        </MenuItem>,
+                        ...depts.map((dept) => (
+                          <MenuItem key={`${school}-${dept}`} value={dept} sx={{ pl: 4 }}>
+                            {dept}
+                          </MenuItem>
+                        ))
+                      ])
+                    )}
                   </Select>
                 </FormControl>
               </Grid>
@@ -3289,58 +3384,272 @@ const Courses = () => {
           setResubmitDialogOpen(false);
           setResubmitCourse(null);
         }}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.15)',
+            maxWidth: 500,
+            overflow: 'hidden',
+            background: 'linear-gradient(to bottom, #ffffff, #f8f9fa)'
+          }
+        }}
+        TransitionProps={{
+          sx: {
+            transition: 'all 0.3s ease-out!important'
+          }
+        }}
       >
-        <DialogTitle>Confirm Course Resubmission</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to resubmit this course to the School Dean?
-          </DialogContentText>
-          {resubmitCourse && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" color="primary" gutterBottom>
-                Course Details:
+        <Box sx={{ position: 'relative' }}>
+          {/* Header with gradient background */}
+          <Box sx={{ 
+            background: 'linear-gradient(135deg, #3f51b5 0%, #2196f3 100%)',
+            p: 3,
+            color: 'white',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            <Box sx={{ 
+              position: 'absolute', 
+              top: -15, 
+              right: -15, 
+              width: 120, 
+              height: 120, 
+              borderRadius: '50%', 
+              background: 'rgba(255,255,255,0.1)' 
+            }} />
+            <Box sx={{ 
+              position: 'absolute', 
+              bottom: -30, 
+              left: -30, 
+              width: 160, 
+              height: 160, 
+              borderRadius: '50%', 
+              background: 'rgba(255,255,255,0.05)' 
+            }} />
+            
+            <Typography variant="h6" fontWeight={600} sx={{ position: 'relative', zIndex: 1 }}>
+              Confirm Course Resubmission
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.9, position: 'relative', zIndex: 1 }}>
+              Review the information below before proceeding
+            </Typography>
+          </Box>
+          
+          <DialogContent sx={{ p: 0 }}>
+            {/* Warning message */}
+            <Box sx={{ 
+              p: 2.5, 
+              m: 3,
+              mt: 3,
+              mb: 2,
+              bgcolor: alpha('#ff9800', 0.08), 
+              color: 'warning.dark',
+              borderRadius: 2,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+              border: '1px solid',
+              borderColor: alpha('#ff9800', 0.2),
+              boxShadow: `0 2px 8px ${alpha('#ff9800', 0.08)}`
+            }}>
+              <Avatar sx={{ bgcolor: alpha('#ff9800', 0.15), color: 'warning.main', width: 36, height: 36 }}>
+                <WarningIcon fontSize="small" />
+              </Avatar>
+              <Typography variant="body2" fontWeight={500}>
+                Are you sure you want to resubmit this course to the School Dean?
               </Typography>
-              <Typography variant="body2">
-                <strong>Code:</strong> {resubmitCourse.code}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Title:</strong> {resubmitCourse.title}
-              </Typography>
-              <Typography variant="body2" color="error" sx={{ mt: 2 }}>
-                Please confirm that you have:
-              </Typography>
-              <Box component="ul" sx={{ mt: 1, mb: 2 }}>
-                <Typography component="li" variant="body2">
-                  • Reviewed the dean's rejection feedback
-                </Typography>
-                <Typography component="li" variant="body2">
-                  • Made necessary changes to address the concerns
-                </Typography>
-                <Typography component="li" variant="body2">
-                  • Verified all course information is correct
-                </Typography>
-              </Box>
             </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button 
-            onClick={() => {
-              setResubmitDialogOpen(false);
-              setResubmitCourse(null);
-            }}
-          >
-            Cancel
-          </Button>
-          <LoadingButton
-            onClick={handleResubmitConfirm}
-            color="primary"
-            variant="contained"
-            startIcon={<SendIcon />}
-          >
-            Confirm Resubmission
-          </LoadingButton>
-        </DialogActions>
+            
+            {resubmitCourse && (
+              <Box sx={{ px: 3, pb: 3 }}>
+                {/* Course details card */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle2" color="primary.dark" fontWeight={600} sx={{ 
+                    mb: 1.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                  }}>
+                    <ClassIcon fontSize="small" />
+                    Course Details
+                  </Typography>
+                  <Paper 
+                    elevation={0}
+                    sx={{ 
+                      p: 2.5, 
+                      borderRadius: 2, 
+                      bgcolor: alpha(theme.palette.primary.main, 0.03),
+                      border: '1px solid',
+                      borderColor: alpha(theme.palette.primary.main, 0.08)
+                    }}
+                  >
+                    <Grid container spacing={2}>
+                      <Grid item xs={4}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Code</Typography>
+                      </Grid>
+                      <Grid item xs={8}>
+                        <Typography variant="body2" fontWeight={600} color="text.primary">{resubmitCourse.code}</Typography>
+                      </Grid>
+                      
+                      <Grid item xs={4}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Title</Typography>
+                      </Grid>
+                      <Grid item xs={8}>
+                        <Typography variant="body2" fontWeight={600} color="text.primary">{resubmitCourse.title}</Typography>
+                      </Grid>
+                    </Grid>
+                  </Paper>
+                </Box>
+                
+                {/* Confirmation checklist */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle2" color="primary.dark" fontWeight={600} sx={{ 
+                    mb: 1.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                  }}>
+                    <InfoIcon fontSize="small" />
+                    Please confirm that you have:
+                  </Typography>
+                  <Paper 
+                    elevation={0}
+                    sx={{ 
+                      borderRadius: 2,
+                      overflow: 'hidden',
+                      border: '1px solid',
+                      borderColor: alpha(theme.palette.divider, 0.5)
+                    }}
+                  >
+                    <Box sx={{ 
+                      p: 0.5,
+                      bgcolor: 'background.paper',
+                    }}>
+                      <List dense disablePadding>
+                        <ListItem sx={{ py: 1 }}>
+                          <ListItemIcon sx={{ minWidth: 36 }}>
+                            <CheckCircleIcon fontSize="small" color="success" />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="Reviewed the dean's rejection feedback"
+                            primaryTypographyProps={{ variant: 'body2' }}
+                          />
+                        </ListItem>
+                        <Divider component="li" variant="middle" />
+                        <ListItem sx={{ py: 1 }}>
+                          <ListItemIcon sx={{ minWidth: 36 }}>
+                            <CheckCircleIcon fontSize="small" color="success" />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="Made necessary changes to address the concerns"
+                            primaryTypographyProps={{ variant: 'body2' }}
+                          />
+                        </ListItem>
+                        <Divider component="li" variant="middle" />
+                        <ListItem sx={{ py: 1 }}>
+                          <ListItemIcon sx={{ minWidth: 36 }}>
+                            <CheckCircleIcon fontSize="small" color="success" />
+                          </ListItemIcon>
+                          <ListItemText 
+                            primary="Verified all course information is correct"
+                            primaryTypographyProps={{ variant: 'body2' }}
+                          />
+                        </ListItem>
+                      </List>
+                    </Box>
+                  </Paper>
+                </Box>
+                
+                {/* Confirmation checkbox */}
+                <Paper 
+                  elevation={0}
+                  sx={{ 
+                    p: 2, 
+                    borderRadius: 2,
+                    bgcolor: alpha(theme.palette.primary.main, 0.04),
+                    border: '1px dashed',
+                    borderColor: alpha(theme.palette.primary.main, 0.2)
+                  }}
+                >
+                  <FormControlLabel
+                    sx={{ m: 0 }}
+                    control={
+                      <Checkbox 
+                        required 
+                        color="primary" 
+                        onChange={(e) => setConfirmResubmitChecked(e.target.checked)}
+                        checked={confirmResubmitChecked}
+                        sx={{ '& .MuiSvgIcon-root': { fontSize: 22 } }}
+                      />
+                    }
+                    label={
+                      <Typography variant="body2" fontWeight={500} color="text.primary">
+                        I confirm that I have reviewed all the information and want to resubmit this course
+                      </Typography>
+                    }
+                  />
+                </Paper>
+              </Box>
+            )}
+          </DialogContent>
+          
+          {/* Actions */}
+          <Box sx={{ 
+            px: 3, 
+            py: 2.5, 
+            borderTop: '1px solid', 
+            borderColor: alpha(theme.palette.divider, 0.5),
+            bgcolor: alpha(theme.palette.background.default, 0.5),
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 2
+          }}>
+            <Button 
+              onClick={() => {
+                setResubmitDialogOpen(false);
+                setResubmitCourse(null);
+                setConfirmResubmitChecked(false);
+              }}
+              variant="outlined"
+              color="inherit"
+              sx={{ 
+                borderRadius: 6,
+                px: 3,
+                textTransform: 'none',
+                fontWeight: 500,
+                borderColor: alpha(theme.palette.divider, 0.5),
+                '&:hover': {
+                  borderColor: alpha(theme.palette.divider, 0.8),
+                  bgcolor: alpha(theme.palette.divider, 0.05)
+                }
+              }}
+            >
+              Cancel
+            </Button>
+            <LoadingButton
+              onClick={handleResubmitConfirm}
+              color="primary"
+              variant="contained"
+              startIcon={<SendIcon />}
+              disabled={!confirmResubmitChecked || isSubmitting}
+              loading={isSubmitting}
+              loadingPosition="start"
+              sx={{ 
+                borderRadius: 6,
+                px: 3,
+                py: 1,
+                textTransform: 'none',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  boxShadow: '0 4px 12px rgba(33, 150, 243, 0.2)'
+                }
+              }}
+            >
+              {isSubmitting ? 'Resubmitting...' : 'Confirm Resubmit'}
+            </LoadingButton>
+          </Box>
+        </Box>
       </Dialog>
 
       <DeleteConfirmationDialog 

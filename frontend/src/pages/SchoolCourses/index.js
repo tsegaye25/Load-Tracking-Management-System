@@ -109,7 +109,23 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
 
   // Calculate totals and status counts
   const totalCourses = courses.length;
-  const totalWorkload = courses.reduce((sum, course) => sum + (course.totalWorkload || 0), 0);
+  
+  // Calculate total workload using the formula:
+  // Total Loads = (Lecture Hours * Number of Sections Lecture) + 
+  //               (Lab Hours * 0.67 * Number of Sections Lab) + 
+  //               (Tutorial Hours * 0.67 * Number of Sections Tutorial) + 
+  //               HDP Hours + Position Hours + Batch Advisor Hours
+  const totalWorkload = parseFloat(courses.reduce((sum, course) => {
+    const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
+    const labLoad = (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 0);
+    const tutorialLoad = (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 0);
+    return sum + lectureLoad + labLoad + tutorialLoad;
+  }, 0) + (instructorHours ? instructorHours.hdpHour + instructorHours.positionHour + instructorHours.batchAdvisor : 0)).toFixed(2);
+  
+  // Calculate overload (Total Workload - 12)
+  // If overload is negative, show 0
+  const overload = Math.max(0, parseFloat((totalWorkload - 12).toFixed(2)));
+  
   const department = courses[0]?.department || 'N/A';
 
   // Calculate status counts
@@ -335,59 +351,7 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
         </TableCell>
         <TableCell sx={{ pl: 2.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Typography variant="subtitle2">{instructor}</Typography>
-            <Tooltip title={getStatusText('dean-approved')}>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', ml: 1 }}>
-                {statusCounts['dean-approved'] > 0 && (
-                  <Chip 
-                    size="small" 
-                    color="success" 
-                    label={statusCounts['dean-approved']}
-                    icon={<CheckCircleIcon />}
-                  />
-                )}
-                {statusCounts['dean-rejected'] > 0 && (
-                  <Chip 
-                    size="small" 
-                    color="error" 
-                    label={statusCounts['dean-rejected']}
-                    icon={<CancelIcon />}
-                  />
-                )}
-                {statusCounts['vice-director-rejected'] > 0 && (
-                  <Chip 
-                    size="small" 
-                    color="warning" 
-                    label={statusCounts['vice-director-rejected']}
-                    icon={<PendingIcon />}
-                  />
-                )}
-                {statusCounts['finance-approved'] > 0 && (
-                  <Chip 
-                    size="small" 
-                    color="success" 
-                    label={statusCounts['finance-approved']}
-                    icon={<FinanceIcon />}
-                  />
-                )}
-                {statusCounts['finance-rejected'] > 0 && (
-                  <Chip 
-                    size="small" 
-                    color="error" 
-                    label={statusCounts['finance-rejected']}
-                    icon={<FinanceIcon />}
-                  />
-                )}
-                {statusCounts['finance-review'] > 0 && (
-                  <Chip 
-                    size="small" 
-                    color="info" 
-                    label={statusCounts['finance-review']}
-                    icon={<FinanceIcon />}
-                  />
-                )}
-              </Box>
-            </Tooltip>
+            <Typography variant="subtitle2" fontWeight="medium">{instructor}</Typography>
             {isLoading && (
               <CircularProgress size={16} sx={{ ml: 1 }} />
             )}
@@ -396,8 +360,14 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
         <TableCell sx={{ pl: 2.5 }}>{department}</TableCell>
         <TableCell align="center">{totalCourses}</TableCell>
         <TableCell align="center">{totalWorkload}</TableCell>
-        <TableCell sx={{ pl: 2.5 }}>
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        <TableCell align="center" sx={{ 
+          color: totalWorkload > 12 ? 'success.main' : 'text.secondary', 
+          fontWeight: totalWorkload > 12 ? 'bold' : 'normal' 
+        }}>
+          {Math.max(0, parseFloat((totalWorkload - 12).toFixed(2)))}
+        </TableCell>
+        <TableCell align="center">
+          <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', justifyContent: 'center' }}>
             {!courses.every(course => course.status === 'vice-director-approved') && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {courses.some(course => course.status === 'vice-director-rejected') ? (
@@ -723,139 +693,9 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
         </TableCell>
       </TableRow>
       <TableRow>
-        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
+        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
           <Collapse in={open} timeout="auto" unmountOnExit>
             <Box sx={{ p: { xs: 2, md: 3 } }}>
-              {/* Workload Summary */}
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Workload Summary
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} md={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="subtitle1" color="primary" gutterBottom>
-                          Course Hours
-                        </Typography>
-                        <Grid container spacing={1}>
-                          <Grid item xs={6}>
-                            <Typography variant="body2" color="textSecondary">
-                              Credit Hours
-                            </Typography>
-                            <Typography variant="h6">
-                              {workloadStats.creditHours}
-                            </Typography>
-                          </Grid>
-                          <Grid item xs={6}>
-                            <Typography variant="body2" color="textSecondary">
-                              Total Hours
-                            </Typography>
-                            <Typography variant="h6">
-                              {workloadStats.lectureHours + workloadStats.labHours + workloadStats.tutorialHours}
-                            </Typography>
-                          </Grid>
-                          <Grid item xs={12}>
-                            <Box sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}>
-                              <Typography variant="body2" color="textSecondary">
-                                Breakdown
-                              </Typography>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                                <Typography variant="body2">Lecture: {workloadStats.lectureHours}</Typography>
-                                <Typography variant="body2">Lab: {workloadStats.labHours}</Typography>
-                                <Typography variant="body2">Tutorial: {workloadStats.tutorialHours}</Typography>
-                              </Box>
-                            </Box>
-                          </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="subtitle1" color="primary" gutterBottom>
-                          Sections
-                        </Typography>
-                        <Grid container spacing={1}>
-                          <Grid item xs={12}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                              <Typography variant="body2" color="textSecondary">
-                                Total Sections
-                              </Typography>
-                              <Typography variant="h6">
-                                {workloadStats.lectureSections + workloadStats.labSections + workloadStats.tutorialSections}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                          <Grid item xs={12}>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="body2">Lecture Sections:</Typography>
-                                <Typography variant="body2" fontWeight="medium">{workloadStats.lectureSections}</Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="body2">Lab Sections:</Typography>
-                                <Typography variant="body2" fontWeight="medium">{workloadStats.labSections}</Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="body2">Tutorial Sections:</Typography>
-                                <Typography variant="body2" fontWeight="medium">{workloadStats.tutorialSections}</Typography>
-                              </Box>
-                            </Box>
-                          </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="subtitle1" color="primary" gutterBottom>
-                          Additional Hours
-                        </Typography>
-                        <Grid container spacing={1}>
-                          <Grid item xs={12}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                              <Typography variant="body2" color="textSecondary">
-                                Total Additional Hours
-                              </Typography>
-                              <Typography variant="h6">
-                                {instructorHours ? 
-                                  instructorHours.hdpHour + instructorHours.positionHour + instructorHours.batchAdvisor :
-                                  'Loading...'}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                          <Grid item xs={12}>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="body2">HDP Hours:</Typography>
-                                <Typography variant="body2" fontWeight="medium">
-                                  {instructorHours?.hdpHour || 0}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="body2">Position Hours:</Typography>
-                                <Typography variant="body2" fontWeight="medium">
-                                  {instructorHours?.positionHour || 0}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="body2">Batch Advisor Hours:</Typography>
-                                <Typography variant="body2" fontWeight="medium">
-                                  {instructorHours?.batchAdvisor || 0}
-                                </Typography>
-                              </Box>
-                            </Box>
-                          </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                </Grid>
-              </Box>
-
               {/* Course Details Table */}
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6">
@@ -875,30 +715,37 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
                   )}
                 </Box>
               </Box>
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
+              <TableContainer component={Paper} variant="outlined" sx={{ boxShadow: 1, borderRadius: 2, overflow: 'hidden', width: '100%' }}>
+                <Table size="medium">
                   <TableHead>
                     <TableRow>
-                      <TableCell>Code</TableCell>
-                      <TableCell>Title</TableCell>
-                      <TableCell>Credit Hours</TableCell>
-                      <TableCell colSpan={3} align="center">Number of Sections</TableCell>
-                      <TableCell colSpan={3} align="center">
-                        <Tooltip title="These hours are specific to the instructor and are the same across all their courses">
-                          
-                        </Tooltip>
-                        <TableCell>Status</TableCell>
+                      <TableCell sx={{ fontWeight: 600, fontSize: '0.875rem', py: 2 }}>Code</TableCell>
+                      <TableCell sx={{ fontWeight: 600, fontSize: '0.875rem', py: 2, minWidth: 180 }}>Title</TableCell>
+                      <TableCell colSpan={4} align="center" sx={{ bgcolor: alpha('#42a5f5', 0.1), borderBottom: `1px solid ${alpha('#42a5f5', 0.2)}` }}>
+                        Hours for
                       </TableCell>
-                        
+                      <TableCell colSpan={3} align="center" sx={{ bgcolor: alpha('#66bb6a', 0.1), borderBottom: `1px solid ${alpha('#66bb6a', 0.2)}` }}>
+                        Number of Sections
+                      </TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#ff9800', 0.1), borderBottom: `1px solid ${alpha('#ff9800', 0.2)}` }}>
+                        Workload
+                      </TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#9c27b0', 0.1), borderBottom: `1px solid ${alpha('#9c27b0', 0.2)}` }}>
+                        Status
+                      </TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell />
                       <TableCell />
-                      <TableCell />
-                      <TableCell align="center">Lecture</TableCell>
-                      <TableCell align="center">Lab</TableCell>
-                      <TableCell align="center">Tutorial</TableCell>
-                      <TableCell />
+                      <TableCell align="center" sx={{ bgcolor: alpha('#42a5f5', 0.05), fontWeight: 600, fontSize: '0.875rem' }}>Credit</TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#42a5f5', 0.05), fontWeight: 600, fontSize: '0.875rem' }}>Lecture</TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#42a5f5', 0.05), fontWeight: 600, fontSize: '0.875rem' }}>Lab</TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#42a5f5', 0.05), fontWeight: 600, fontSize: '0.875rem' }}>Tutorial</TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#66bb6a', 0.05), fontWeight: 600, fontSize: '0.875rem' }}>Lecture</TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#66bb6a', 0.05), fontWeight: 600, fontSize: '0.875rem' }}>Lab</TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#66bb6a', 0.05), fontWeight: 600, fontSize: '0.875rem' }}>Tutorial</TableCell>
+                      <TableCell align="center" sx={{ bgcolor: alpha('#ff9800', 0.05), fontWeight: 600, fontSize: '0.875rem' }}>Total</TableCell>
+                      <TableCell sx={{ bgcolor: alpha('#9c27b0', 0.05), fontWeight: 600, fontSize: '0.875rem', textAlign: 'center' }}>Status</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -938,7 +785,7 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
                       >
                         <TableCell component="th" scope="row">
                           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Typography variant="body2" fontWeight="medium">
+                            <Typography variant="body1" fontWeight="medium" sx={{ fontSize: '0.9rem' }}>
                               {course.code}
                             </Typography>
                             {processingErrors[course._id] && (
@@ -953,32 +800,65 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
                           </Box>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="body2" noWrap>
+                          <Typography variant="body1" sx={{ fontSize: '0.9rem', maxWidth: 250 }} noWrap>
                             {course.title}
                           </Typography>
                         </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" fontWeight="medium">
+                        <TableCell align="center">
+                          <Typography variant="body1" fontWeight="medium" sx={{ fontSize: '0.9rem', color: 'primary.dark' }}>
                             {course.Hourfor?.creaditHours || 0}
                           </Typography>
                         </TableCell>
                         <TableCell align="center">
-                          <Typography variant="body2">
+                          <Typography variant="body1" sx={{ fontSize: '0.9rem', color: alpha('#42a5f5', 0.9) }}>
+                            {course.Hourfor?.lecture || 0}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Typography variant="body1" sx={{ fontSize: '0.9rem', color: alpha('#42a5f5', 0.9) }}>
+                            {course.Hourfor?.lab || 0}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Typography variant="body1" sx={{ fontSize: '0.9rem', color: alpha('#42a5f5', 0.9) }}>
+                            {course.Hourfor?.tutorial || 0}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Typography variant="body1" sx={{ fontSize: '0.9rem', color: alpha('#66bb6a', 0.9) }}>
                             {course.Number_of_Sections?.lecture || 0}
                           </Typography>
                         </TableCell>
                         <TableCell align="center">
-                          <Typography variant="body2">
+                          <Typography variant="body1" sx={{ fontSize: '0.9rem', color: alpha('#66bb6a', 0.9) }}>
                             {course.Number_of_Sections?.lab || 0}
                           </Typography>
                         </TableCell>
                         <TableCell align="center">
-                          <Typography variant="body2">
+                          <Typography variant="body1" sx={{ fontSize: '0.9rem', color: alpha('#66bb6a', 0.9) }}>
                             {course.Number_of_Sections?.tutorial || 0}
                           </Typography>
                         </TableCell>
-                        
-                       
+                        <TableCell align="center">
+                          <Tooltip title="(Lecture Hours × Lecture Sections) + (Lab Hours × 0.67 × Lab Sections) + (Tutorial Hours × 0.67 × Tutorial Sections)">
+                            <Box sx={{ 
+                              display: 'inline-flex', 
+                              bgcolor: alpha('#ff9800', 0.1), 
+                              px: 1.5, 
+                              py: 0.5, 
+                              borderRadius: 1,
+                              border: `1px solid ${alpha('#ff9800', 0.2)}`
+                            }}>
+                              <Typography variant="body1" fontWeight="medium" sx={{ fontSize: '0.9rem', color: 'warning.dark' }}>
+                                {parseFloat((
+                                  (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0) +
+                                  (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 0) +
+                                  (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 0)
+                                ).toFixed(2))}
+                              </Typography>
+                            </Box>
+                          </Tooltip>
+                        </TableCell>
                         <TableCell>
                           <Chip 
                             label={course.status === 'vice-director-rejected' ? 'Rejected' : course.status}
@@ -1003,9 +883,24 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
                       <TableCell colSpan={2}>
                         <Typography variant="subtitle2">TOTALS</Typography>
                       </TableCell>
-                      <TableCell>
+                      <TableCell align="center">
                         <Typography variant="subtitle2">
                           {courses.reduce((sum, course) => sum + (course.Hourfor?.creaditHours || 0), 0)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography variant="subtitle2">
+                          {courses.reduce((sum, course) => sum + (course.Hourfor?.lecture || 0), 0)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography variant="subtitle2">
+                          {courses.reduce((sum, course) => sum + (course.Hourfor?.lab || 0), 0)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography variant="subtitle2">
+                          {courses.reduce((sum, course) => sum + (course.Hourfor?.tutorial || 0), 0)}
                         </Typography>
                       </TableCell>
                       <TableCell align="center">
@@ -1028,6 +923,43 @@ const InstructorRow = ({ instructor, instructorId, courses, onStatusChange }) =>
                   </TableBody>
                 </Table>
               </TableContainer>
+
+              {/* Additional Hours Section - Compact Card */}
+              <Box sx={{ mt: 3, mb: 3 }}>
+                <Card variant="outlined">
+                  <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item xs={12} sm={3}>
+                        <Typography variant="subtitle1" color="primary" fontWeight="medium">
+                          Additional Hours
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={9}>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Typography variant="body2" color="text.secondary">HDP:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{instructorHours?.hdpHour || 0}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Typography variant="body2" color="text.secondary">Position:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{instructorHours?.positionHour || 0}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Typography variant="body2" color="text.secondary">Batch Advisor:</Typography>
+                            <Typography variant="body2" fontWeight="medium">{instructorHours?.batchAdvisor || 0}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}>
+                            <Typography variant="body2" color="text.secondary">Total:</Typography>
+                            <Typography variant="body2" fontWeight="bold" color="primary.main">
+                              {instructorHours ? instructorHours.hdpHour + instructorHours.positionHour + instructorHours.batchAdvisor : 0}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Grid>
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </Box>
 
               {/* Rejection Details Section - Single common section for all rejected courses */}
               {courses.some(course => course.status === 'vice-director-rejected') && (
@@ -2375,7 +2307,26 @@ const SchoolCourses = () => {
             .map(([instructor, courses]) => {
               const department = courses[0]?.department || 'N/A';
               const totalCourses = courses.length;
-              const totalWorkload = courses.reduce((sum, course) => sum + (course.totalWorkload || 0), 0);
+              
+              // Calculate total workload using the same formula as desktop view
+              // including HDP Hours, Position Hours, and Batch Advisor Hours
+              const instructorId = courses[0]?.instructor?._id;
+              const additionalHours = instructorId ? (
+                (instructorWorkloads[instructorId]?.hdpHour || 0) + 
+                (instructorWorkloads[instructorId]?.positionHour || 0) + 
+                (instructorWorkloads[instructorId]?.batchAdvisor || 0)
+              ) : 0;
+              
+              const totalWorkload = parseFloat(courses.reduce((sum, course) => {
+                const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
+                const labLoad = (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 0);
+                const tutorialLoad = (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 0);
+                return sum + lectureLoad + labLoad + tutorialLoad;
+              }, 0) + additionalHours).toFixed(2);
+              
+              // Calculate overload (Total Workload - 12)
+              // If overload is negative, show 0
+              const overload = Math.max(0, parseFloat((totalWorkload - 12).toFixed(2)));
               
               // Calculate status counts
               const statusCounts = courses.reduce((acc, course) => {
@@ -2625,6 +2576,55 @@ const SchoolCourses = () => {
                         Course Details ({courses.length})
                       </Typography>
                       
+                      {/* Workload Summary */}
+                      <Box sx={{ mb: 3 }}>
+                        <Grid container spacing={2}>
+                          <Grid item xs={6}>
+                            <Box sx={{ 
+                              p: 1.5, 
+                              bgcolor: alpha(theme.palette.primary.main, 0.05),
+                              borderRadius: 1,
+                              border: '1px solid',
+                              borderColor: alpha(theme.palette.primary.main, 0.15),
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              height: '100%'
+                            }}>
+                              <Typography variant="caption" color="textSecondary" fontWeight={500}>
+                                Total Workload
+                              </Typography>
+                              <Typography variant="h6" color="primary.dark" fontWeight={600}>
+                                {totalWorkload}
+                              </Typography>
+                            </Box>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Box sx={{ 
+                              p: 1.5, 
+                              bgcolor: alpha(theme.palette.success.main, 0.05),
+                              borderRadius: 1,
+                              border: '1px solid',
+                              borderColor: alpha(theme.palette.success.main, 0.15),
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              height: '100%'
+                            }}>
+                              <Typography variant="caption" color="textSecondary" fontWeight={500}>
+                                Overload
+                              </Typography>
+                              <Typography variant="h6" color="success.dark" fontWeight={600}>
+                                {overload}
+                              </Typography>
+                            </Box>
+                          </Grid>
+                        </Grid>
+                      </Box>
+                      
+                      {/* Course List */}
                       <Box sx={{ mt: 1.5 }}>
                         <Box sx={{ 
                           display: 'grid',
@@ -2640,54 +2640,69 @@ const SchoolCourses = () => {
                           <Typography variant="caption" color="textSecondary" fontWeight={600} align="center">Status</Typography>
                         </Box>
                         
-                        {courses.map((course) => (
-                          <Box 
-                            key={course._id}
-                            sx={{ 
-                              display: 'grid',
-                              gridTemplateColumns: '1fr 2fr 1fr',
-                              gap: 1,
-                              p: 1,
-                              borderBottom: '1px solid',
-                              borderColor: alpha(theme.palette.divider, 0.3),
-                              '&:hover': {
-                                bgcolor: alpha(theme.palette.primary.main, 0.03)
-                              }
-                            }}
-                          >
-                            <Typography variant="body2" fontWeight={600} sx={{ fontSize: '0.8rem' }}>
-                              {course.code}
-                            </Typography>
-                            <Typography variant="body2" sx={{ 
-                              fontSize: '0.8rem',
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis'
-                            }}>
-                              {course.title}
-                            </Typography>
-                            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                              <Chip 
-                                size="small" 
-                                label={course.status.split('-').pop()}
-                                color={
-                                  course.status.includes('approved') ? 'success' :
-                                  course.status.includes('rejected') ? 'error' :
-                                  'warning'
+                        {courses.map((course) => {
+                          // Calculate course workload
+                          const courseWorkload = parseFloat((
+                            (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0) +
+                            (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 0) +
+                            (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 0)
+                          ).toFixed(2));
+                          
+                          return (
+                            <Box 
+                              key={course._id}
+                              sx={{ 
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 2fr 1fr',
+                                gap: 1,
+                                p: 1,
+                                borderBottom: '1px solid',
+                                borderColor: alpha(theme.palette.divider, 0.3),
+                                '&:hover': {
+                                  bgcolor: alpha(theme.palette.primary.main, 0.03)
                                 }
-                                sx={{ 
-                                  height: 24, 
-                                  fontSize: '0.7rem',
-                                  '& .MuiChip-label': {
-                                    px: 1
+                              }}
+                            >
+                              <Typography variant="body2" fontWeight={600} sx={{ fontSize: '0.8rem' }}>
+                                {course.code}
+                              </Typography>
+                              <Typography variant="body2" sx={{ 
+                                fontSize: '0.8rem',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}>
+                                {course.title}
+                                <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Typography variant="caption" color="warning.dark" fontWeight="medium" sx={{ 
+                                    bgcolor: alpha('#ff9800', 0.1), 
+                                    px: 0.75, 
+                                    py: 0.25, 
+                                    borderRadius: 0.5,
+                                    fontSize: '0.7rem',
+                                    display: 'inline-flex'
+                                  }}>
+                                    WL: {courseWorkload}
+                                  </Typography>
+                                </Box>
+                              </Typography>
+                              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                                <Chip 
+                                  size="small"
+                                  label={course.status}
+                                  color={
+                                    course.status === 'vice-director-rejected' ? 'error' :
+                                    course.status === 'vice-director-approved' ? 'success' :
+                                    course.status === 'scientific-director-approved' ? 'success' :
+                                    'default'
                                   }
-                                }}
-                              />
+                                  sx={{ height: 20, fontSize: '0.7rem' }}
+                                />
+                              </Box>
                             </Box>
-                          </Box>
-                        ))}
+                          );
+                        })}
                       </Box>
-                      
                       {/* Course Summary */}
                       <Box sx={{ 
                         mt: 2, 
@@ -2714,127 +2729,7 @@ const SchoolCourses = () => {
                           Workload Summary ({courses.length} Courses)
                         </Typography>
                         
-                        {/* Credit Hours */}
-                        <Grid container spacing={2} sx={{ mt: 0.5 }}>
-                          <Grid item xs={4}>
-                            <Box sx={{ 
-                              p: 1, 
-                              bgcolor: alpha(theme.palette.primary.main, 0.05),
-                              borderRadius: 1,
-                              textAlign: 'center',
-                              border: '1px solid',
-                              borderColor: alpha(theme.palette.primary.main, 0.1)
-                            }}>
-                              <Typography variant="caption" color="textSecondary" display="block">
-                                Credit Hours
-                              </Typography>
-                              <Typography variant="body2" fontWeight={600}>
-                                {courses.reduce((sum, course) => sum + (course.Hourfor?.creaditHours || 0), 0)}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                          <Grid item xs={4}>
-                            <Box sx={{ 
-                              p: 1, 
-                              bgcolor: alpha(theme.palette.primary.main, 0.05),
-                              borderRadius: 1,
-                              textAlign: 'center',
-                              border: '1px solid',
-                              borderColor: alpha(theme.palette.primary.main, 0.1)
-                            }}>
-                              <Typography variant="caption" color="textSecondary" display="block">
-                                Lecture
-                              </Typography>
-                              <Typography variant="body2" fontWeight={600}>
-                                {courses.reduce((sum, course) => sum + (course.Number_of_Sections?.lecture || 0), 0)}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                          <Grid item xs={4}>
-                            <Box sx={{ 
-                              p: 1, 
-                              bgcolor: alpha(theme.palette.primary.main, 0.05),
-                              borderRadius: 1,
-                              textAlign: 'center',
-                              border: '1px solid',
-                              borderColor: alpha(theme.palette.primary.main, 0.1)
-                            }}>
-                              <Typography variant="caption" color="textSecondary">
-                                Lab/Tutorial
-                              </Typography>
-                              <Typography variant="body2" fontWeight={600}>
-                                {courses.reduce((sum, course) => (
-                                  sum + (course.Number_of_Sections?.lab || 0) + (course.Number_of_Sections?.tutorial || 0)
-                                ), 0)}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                        </Grid>
-                        
-                        {/* Section Hours */}
-                        <Typography variant="caption" color="textSecondary" fontWeight={500} sx={{
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          mt: 2.5,
-                          mb: 1,
-                          display: 'block'
-                        }}>
-                          Number of Sections
-                        </Typography>
-                        
-                        <Grid container spacing={1.5}>
-                          <Grid item xs={4}>
-                            <Box sx={{ 
-                              p: 1, 
-                              bgcolor: alpha(theme.palette.secondary.main, 0.03),
-                              borderRadius: 1,
-                              textAlign: 'center',
-                              border: '1px solid',
-                              borderColor: alpha(theme.palette.secondary.main, 0.1)
-                            }}>
-                              <Typography variant="caption" color="textSecondary">
-                                Lecture
-                              </Typography>
-                              <Typography variant="body2" fontWeight="medium" color="secondary.dark">
-                                {courses.reduce((sum, course) => sum + (course.Number_of_Sections?.lecture || 0), 0)}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                          <Grid item xs={4}>
-                            <Box sx={{ 
-                              p: 1, 
-                              bgcolor: alpha(theme.palette.secondary.main, 0.03),
-                              borderRadius: 1,
-                              textAlign: 'center',
-                              border: '1px solid',
-                              borderColor: alpha(theme.palette.secondary.main, 0.1)
-                            }}>
-                              <Typography variant="caption" color="textSecondary">
-                                Lab
-                              </Typography>
-                              <Typography variant="body2" fontWeight="medium" color="secondary.dark">
-                                {courses.reduce((sum, course) => sum + (course.Number_of_Sections?.lab || 0), 0)}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                          <Grid item xs={4}>
-                            <Box sx={{ 
-                              p: 1, 
-                              bgcolor: alpha(theme.palette.secondary.main, 0.03),
-                              borderRadius: 1,
-                              textAlign: 'center',
-                              border: '1px solid',
-                              borderColor: alpha(theme.palette.secondary.main, 0.1)
-                            }}>
-                              <Typography variant="caption" color="textSecondary">
-                                Tutorial
-                              </Typography>
-                              <Typography variant="body2" fontWeight="medium" color="secondary.dark">
-                                {courses.reduce((sum, course) => sum + (course.Number_of_Sections?.tutorial || 0), 0)}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                        </Grid>
+                        {/* Removed Credit Hours, Lecture, Lab/Tutorial, and Number of Sections as requested */}
                         
                         {/* Additional Hours */}
                         <Typography variant="caption" color="textSecondary" fontWeight={500} sx={{
@@ -2946,28 +2841,6 @@ const SchoolCourses = () => {
                             </Box>
                           </Grid>
                           
-                          {/* Existing Hours */}
-                          <Grid item xs={12}>
-                            <Box sx={{ 
-                              p: 1, 
-                              bgcolor: alpha(theme.palette.info.main, 0.03),
-                              borderRadius: 1,
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              border: '1px solid',
-                              borderColor: alpha(theme.palette.info.main, 0.1),
-                              mt: 0.5
-                            }}>
-                              <Typography variant="caption" color="textSecondary">
-                                Existing Hours
-                              </Typography>
-                              <Typography variant="body2" fontWeight="medium" color="info.dark">
-                                {courses[0]?.instructor?._id && instructorWorkloads[courses[0].instructor._id]?.existingHours || '0'}
-                              </Typography>
-                            </Box>
-                          </Grid>
-                          
                           {/* Total Workload */}
                           <Grid item xs={12}>
                             <Box sx={{ 
@@ -2987,6 +2860,29 @@ const SchoolCourses = () => {
                               </Typography>
                               <Typography variant="body1" fontWeight={600} color="primary.dark">
                                 {totalWorkload} hrs
+                              </Typography>
+                            </Box>
+                          </Grid>
+                          
+                          {/* Overload */}
+                          <Grid item xs={12}>
+                            <Box sx={{ 
+                              p: 1.5, 
+                              bgcolor: alpha(theme.palette.success.main, 0.05),
+                              borderRadius: 1,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              border: '1px solid',
+                              borderColor: alpha(theme.palette.success.main, 0.15),
+                              mt: 1,
+                              boxShadow: `0 1px 2px ${alpha('#000', 0.05)}`
+                            }}>
+                              <Typography variant="body2" color="success.main" fontWeight={500}>
+                                Overload (Total - 12 hrs)
+                              </Typography>
+                              <Typography variant="body1" fontWeight={600} color="success.dark">
+                                {Math.max(0, parseFloat((totalWorkload - 12).toFixed(2)))} hrs
                               </Typography>
                             </Box>
                           </Grid>
@@ -3061,46 +2957,53 @@ const SchoolCourses = () => {
               <TableCell padding="checkbox" sx={{ width: '40px' }} />
               <TableCell sx={{ 
                 fontWeight: 600, 
-                py: 2.5,
+                py: 2,
                 fontSize: '0.95rem',
                 color: 'primary.dark',
                 letterSpacing: '0.02em',
-                width: '20%',
-                pl: 2.5
+                width: '18%',
+                pl: 2
               }}>Instructor</TableCell>
               <TableCell sx={{ 
                 fontWeight: 600, 
-                py: 2.5,
+                py: 2,
                 fontSize: '0.95rem',
                 color: 'primary.dark',
                 letterSpacing: '0.02em',
-                width: '20%',
-                pl: 2.5
+                width: '18%',
+                pl: 1
               }}>Department</TableCell>
               <TableCell align="center" sx={{ 
                 fontWeight: 600, 
-                py: 2.5,
+                py: 2,
                 fontSize: '0.95rem',
                 color: 'primary.dark',
                 letterSpacing: '0.02em',
-                width: '20%'
+                width: '12%'
               }}>Total Courses</TableCell>
               <TableCell align="center" sx={{ 
                 fontWeight: 600, 
-                py: 2.5,
+                py: 2,
                 fontSize: '0.95rem',
                 color: 'primary.dark',
                 letterSpacing: '0.02em',
-                width: '20%'
+                width: '14%'
               }}>Total Workload</TableCell>
-              <TableCell sx={{ 
+              <TableCell align="center" sx={{ 
                 fontWeight: 600, 
-                py: 2.5,
+                py: 2,
+                fontSize: '0.95rem',
+                color: 'success.dark',
+                letterSpacing: '0.02em',
+                width: '12%'
+              }}>Overload</TableCell>
+              <TableCell align="center" sx={{ 
+                fontWeight: 600, 
+                py: 2,
                 fontSize: '0.95rem',
                 color: 'primary.dark',
                 letterSpacing: '0.02em',
-                width: '20%',
-                pl: 2.5
+                width: '18%'
               }}>Status</TableCell>
             </TableRow>
           </TableHead>

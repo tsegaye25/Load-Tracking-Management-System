@@ -24,6 +24,7 @@ import ScientificDirectorCourses from './pages/ScientificDirectorCourses';
 import FinanceDashboard from './pages/FinanceDashboard';
 import FinanceCourses from './pages/FinanceCourses';
 import PaymentCalculator from './pages/PaymentCalculator';
+import AdminDashboard from './pages/AdminDashboard';
 import { useSelector } from 'react-redux';
 import PrivateRoute from './components/PrivateRoute'; // Assuming PrivateRoute is defined in this file
 
@@ -106,6 +107,8 @@ const App = () => {
                   <Navigate to="/scientific-director/dashboard" replace />
                 ) : user?.role === 'finance' ? (
                   <Navigate to="/finance/dashboard" replace />
+                ) : user?.role === 'admin' ? (
+                  <Navigate to="/admin/dashboard" replace />
                 ) : (
                   <Layout>
                     <Dashboard />
@@ -226,6 +229,20 @@ const App = () => {
                   <PrivateRoute allowedRoles={['finance']}>
                     <Layout>
                       <PaymentCalculator />
+                    </Layout>
+                  </PrivateRoute>
+                }
+              />
+            </>
+          )}
+          {user?.role === 'admin' && (
+            <>
+              <Route
+                path="/admin/dashboard"
+                element={
+                  <PrivateRoute allowedRoles={['admin']}>
+                    <Layout>
+                      <AdminDashboard />
                     </Layout>
                   </PrivateRoute>
                 }

@@ -26,7 +26,7 @@ import axios from 'axios';
 import { useSnackbar } from 'notistack';
 
 // Row component for expandable table
-const InstructorRow = ({ instructor, onApprove, onReject }) => {
+const InstructorRow = ({ instructor, onApprove, onReject, onResubmit, index, isSelected, onSelectInstructor, onUpdateInstructor }) => {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
   const [open, setOpen] = useState(false);
@@ -42,7 +42,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
   const [returnToDeanConfirmed, setReturnToDeanConfirmed] = useState(false);
   const [approveAllConfirmed, setApproveAllConfirmed] = useState(false);
   const [rejectAllConfirmed, setRejectAllConfirmed] = useState(false);
-  
+
   const allCoursesApproved = instructor.courses.every(course => 
     course.status === 'vice-director-approved' || 
     course.status === 'scientific-director-approved' ||
@@ -131,10 +131,21 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
         throw new Error('Failed to approve courses');
       }
 
+      // Update the local state to reflect the changes
+      const updatedCourses = instructor.courses.map(course => {
+        if (approvableCourses.some(ac => ac._id === course._id)) {
+          return { ...course, status: 'vice-director-approved' };
+        }
+        return course;
+      });
+      
+      // Update the instructor in the parent component
+      const updatedInstructor = { ...instructor, courses: updatedCourses };
+      onUpdateInstructor(updatedInstructor);
+      
       toast.success(`Successfully approved all courses for ${instructor.name}`);
       setConfirmDialogOpen(false);
       onApprove(); // Refresh the list
-      window.location.reload(); // Force page refresh to update all statuses
     } catch (error) {
       console.error('Error in instructor bulk approval:', error);
       toast.error(`Failed to approve courses for ${instructor.name}`);
@@ -189,11 +200,22 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
         throw new Error('Failed to reject courses');
       }
 
+      // Update the local state to reflect the changes
+      const updatedCourses = instructor.courses.map(course => {
+        if (rejectableCourses.some(rc => rc._id === course._id)) {
+          return { ...course, status: 'vice-director-rejected' };
+        }
+        return course;
+      });
+      
+      // Update the instructor in the parent component
+      const updatedInstructor = { ...instructor, courses: updatedCourses };
+      onUpdateInstructor(updatedInstructor);
+      
       toast.success(`Successfully rejected all courses for ${instructor.name}`);
       setBulkRejectDialogOpen(false);
       setBulkRejectionNotes('');
       onApprove(); // Refresh the list
-      window.location.reload(); // Force page refresh to update all statuses
     } catch (error) {
       console.error('Error in instructor bulk rejection:', error);
       toast.error(`Failed to reject courses for ${instructor.name}`);
@@ -501,7 +523,69 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
         <TableCell>{instructor.school}</TableCell>
         <TableCell align="center">{instructor.courses.length}</TableCell>
         <TableCell align="center">
-          {instructor.courses.reduce((sum, course) => sum + (course.totalWorkload || 0), 0)}
+          {(() => {
+            // Calculate total workload using the correct formula
+            const courseLoads = instructor.courses.reduce((sum, course) => {
+              const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1);
+              const labLoad = (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1);
+              const tutorialLoad = (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1);
+              const courseLoad = lectureLoad + labLoad + tutorialLoad;
+              return sum + courseLoad;
+            }, 0);
+            
+            // Add additional hours
+            const hdpHours = instructor.hours?.hdpHour || 0;
+            const positionHours = instructor.hours?.positionHour || 0;
+            const batchAdvisorHours = instructor.hours?.batchAdvisor || 0;
+            const totalAdditionalHours = hdpHours + positionHours + batchAdvisorHours;
+            
+            // Total loads = course loads + additional hours
+            const totalLoads = courseLoads + totalAdditionalHours;
+            
+            return Math.round(totalLoads * 100) / 100; // Round to 2 decimal places
+          })()}
+        </TableCell>
+        <TableCell align="center">
+          {(() => {
+            // Calculate total workload using the correct formula
+            const courseLoads = instructor.courses.reduce((sum, course) => {
+              const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1);
+              const labLoad = (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1);
+              const tutorialLoad = (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1);
+              const courseLoad = lectureLoad + labLoad + tutorialLoad;
+              return sum + courseLoad;
+            }, 0);
+            
+            // Add additional hours
+            const hdpHours = instructor.hours?.hdpHour || 0;
+            const positionHours = instructor.hours?.positionHour || 0;
+            const batchAdvisorHours = instructor.hours?.batchAdvisor || 0;
+            const totalAdditionalHours = hdpHours + positionHours + batchAdvisorHours;
+            
+            // Total loads = course loads + additional hours
+            const totalLoads = courseLoads + totalAdditionalHours;
+            
+            // Calculate overload
+            const overload = totalLoads - 12;
+            const roundedOverload = Math.round(overload * 100) / 100;
+            // Show 0 instead of negative values
+            const displayValue = roundedOverload > 0 ? roundedOverload : 0;
+            
+            return (
+              <Tooltip title="Overload = Total Loads - 12 (shows 0 if negative)">
+                <Chip 
+                  label={displayValue} 
+                  color={roundedOverload > 0 ? "success" : "default"} 
+                  size="small" 
+                  sx={{ 
+                    minWidth: 40,
+                    height: { xs: 22, sm: 24 },
+                    fontSize: { xs: '0.7rem', sm: '0.75rem' } 
+                  }} 
+                />
+              </Tooltip>
+            );
+          })()}
         </TableCell>
         <TableCell>
           {hasApprovableCourses && (
@@ -896,15 +980,15 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
       </Dialog>
 
       <TableRow>
-        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
+        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
           <Collapse in={open} timeout="auto" unmountOnExit>
-            <Box sx={{ margin: 1 }}>
+            <Box sx={{ margin: 2 }}>
               {/* Additional Hours Section - Show only once */}
-              <Box sx={{ mb: 2 }}>
+              <Box sx={{ mb: 3 }}>
                 <Typography variant="h6" gutterBottom component="div">
                   Additional Hours
                 </Typography>
-                <Grid container spacing={2}>
+                <Grid container spacing={3}>
                   <Grid item xs={12} md={3}>
                     <Typography variant="subtitle2">HDP Hours:</Typography>
                     <Typography>{instructor.hours?.hdpHour || 0}</Typography>
@@ -929,7 +1013,7 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
               </Box>
 
               {/* Courses Section */}
-              <Typography variant="h6" gutterBottom component="div">
+              <Typography variant="h6" gutterBottom component="div" sx={{ mt: 2 }}>
                 Courses
               </Typography>
               
@@ -938,11 +1022,31 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                   <TableRow>
                     <TableCell>Code</TableCell>
                     <TableCell>Title</TableCell>
-                    <TableCell>Credit Hours</TableCell>
-                    <TableCell>Lecture Hours</TableCell>
-                    <TableCell>Lab Hours</TableCell>
-                    <TableCell>Tutorial Hours</TableCell>
-                    <TableCell>Status</TableCell>
+                    <TableCell colSpan={4} align="center" sx={{ bgcolor: alpha('#42a5f5', 0.1), borderBottom: `1px solid ${alpha('#42a5f5', 0.2)}` }}>
+                      Hours for
+                    </TableCell>
+                    <TableCell colSpan={3} align="center" sx={{ bgcolor: alpha('#66bb6a', 0.1), borderBottom: `1px solid ${alpha('#66bb6a', 0.2)}` }}>
+                      Number of Sections
+                    </TableCell>
+                    <TableCell align="center" sx={{ bgcolor: alpha('#ff9800', 0.1), borderBottom: `1px solid ${alpha('#ff9800', 0.2)}` }}>
+                      Workload
+                    </TableCell>
+                    <TableCell align="center" sx={{ bgcolor: alpha('#9c27b0', 0.1), borderBottom: `1px solid ${alpha('#9c27b0', 0.2)}` }}>
+                      Status
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell></TableCell>
+                    <TableCell></TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#42a5f5', 0.05) }}>Credit</TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#42a5f5', 0.05) }}>Lecture</TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#42a5f5', 0.05) }}>Lab</TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#42a5f5', 0.05) }}>Tutorial</TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#66bb6a', 0.05) }}>Lecture</TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#66bb6a', 0.05) }}>Lab</TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#66bb6a', 0.05) }}>Tutorial</TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#ff9800', 0.05) }}></TableCell>
+                    <TableCell sx={{ bgcolor: alpha('#9c27b0', 0.05) }}></TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -956,6 +1060,25 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                       <TableCell>{course.Hourfor?.lecture || 0}</TableCell>
                       <TableCell>{course.Hourfor?.lab || 0}</TableCell>
                       <TableCell>{course.Hourfor?.tutorial || 0}</TableCell>
+                      <TableCell>{course.Number_of_Sections?.lecture || 0}</TableCell>
+                      <TableCell>{course.Number_of_Sections?.lab || 0}</TableCell>
+                      <TableCell>{course.Number_of_Sections?.tutorial || 0}</TableCell>
+                      <TableCell>
+                        <Tooltip title="(Lecture Hours * Lecture Sections) + (Lab Hours * 0.67 * Lab Sections) + (Tutorial Hours * 0.67 * Tutorial Sections)">
+                          <Chip
+                            label={
+                              Math.round((
+                                ((course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1)) +
+                                ((course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1)) +
+                                ((course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1))
+                              ) * 100) / 100
+                            }
+                            size="small"
+                            color="warning"
+                            sx={{ minWidth: 40, fontSize: '0.75rem' }}
+                          />
+                        </Tooltip>
+                      </TableCell>
                       <TableCell>
                         <Chip 
                           label={course.status} 
@@ -989,7 +1112,169 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                     <TableCell sx={{ fontWeight: 'bold' }}>
                       {instructor.courses.reduce((sum, course) => sum + (course.Hourfor?.tutorial || 0), 0)}
                     </TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>
+                      {instructor.courses.reduce((sum, course) => sum + (course.Number_of_Sections?.lecture || 0), 0)}
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>
+                      {instructor.courses.reduce((sum, course) => sum + (course.Number_of_Sections?.lab || 0), 0)}
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>
+                      {instructor.courses.reduce((sum, course) => sum + (course.Number_of_Sections?.tutorial || 0), 0)}
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>
+                      {Math.round(instructor.courses.reduce((sum, course) => {
+                        const courseLoad = 
+                          ((course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1)) +
+                          ((course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1)) +
+                          ((course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1));
+                        return sum + courseLoad;
+                      }, 0) * 100) / 100}
+                    </TableCell>
                     <TableCell />
+                  </TableRow>
+                  
+                  {/* Add Course Hours Total Row with the correct formula */}
+                  <TableRow sx={{ 
+                    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.15),
+                    fontWeight: 'bold'
+                  }}>
+                    <TableCell colSpan={9} align="right" sx={{ fontWeight: 'bold' }}>
+                      Course Hours Total:
+                    </TableCell>
+                    <TableCell align="right" colSpan={2}>
+                      <Tooltip title="Total Loads = (Lecture Hours * Number of Sections Lecture) + (Lab Hours * 0.67 * Number of Sections Lab) + (Tutorial Hours * 0.67 * Number of Sections Tutorial)">
+                        <Chip
+                          label={
+                            Math.round(instructor.courses.reduce((sum, course) => {
+                              // Calculate each course's load using the correct formula
+                              const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1);
+                              const labLoad = (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1);
+                              const tutorialLoad = (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1);
+                              const courseLoad = lectureLoad + labLoad + tutorialLoad;
+                              return sum + courseLoad;
+                            }, 0) * 100) / 100
+                          }
+                          color="primary"
+                          sx={{ 
+                            minWidth: 60, 
+                            fontWeight: 'bold',
+                            fontSize: '0.875rem'
+                          }}
+                        />
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                  
+                  {/* Add Additional Hours Row */}
+                  <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.info.main, 0.1) }}>
+                    <TableCell colSpan={9} align="right" sx={{ fontWeight: 'bold' }}>
+                      Additional Hours:
+                    </TableCell>
+                    <TableCell align="right" colSpan={2}>
+                      <Tooltip title="HDP Hours + Position Hours + Batch Advisor Hours">
+                        <Chip
+                          label={
+                            (instructor.hours?.hdpHour || 0) + 
+                            (instructor.hours?.positionHour || 0) + 
+                            (instructor.hours?.batchAdvisor || 0)
+                          }
+                          color="info"
+                          sx={{ 
+                            minWidth: 60, 
+                            fontWeight: 'bold',
+                            fontSize: '0.875rem'
+                          }}
+                        />
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                  
+                  {/* Add Total Loads Row */}
+                  <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.success.main, 0.1) }}>
+                    <TableCell colSpan={9} align="right" sx={{ fontWeight: 'bold' }}>
+                      Total Loads:
+                    </TableCell>
+                    <TableCell align="right" colSpan={2}>
+                      <Tooltip title="Course Hours Total + Additional Hours">
+                        {(() => {
+                          // Calculate course loads
+                          const courseLoads = instructor.courses.reduce((sum, course) => {
+                            const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1);
+                            const labLoad = (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1);
+                            const tutorialLoad = (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1);
+                            const courseLoad = lectureLoad + labLoad + tutorialLoad;
+                            return sum + courseLoad;
+                          }, 0);
+                          
+                          // Add additional hours
+                          const additionalHours = 
+                            (instructor.hours?.hdpHour || 0) + 
+                            (instructor.hours?.positionHour || 0) + 
+                            (instructor.hours?.batchAdvisor || 0);
+                          
+                          // Calculate total loads
+                          const totalLoads = courseLoads + additionalHours;
+                          
+                          return (
+                            <Chip
+                              label={Math.round(totalLoads * 100) / 100}
+                              color="success"
+                              sx={{ 
+                                minWidth: 60, 
+                                fontWeight: 'bold',
+                                fontSize: '0.875rem'
+                              }}
+                            />
+                          );
+                        })()} 
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                  
+                  {/* Add Overload Row */}
+                  <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.warning.main, 0.05) }}>
+                    <TableCell colSpan={9} align="right" sx={{ fontWeight: 'bold' }}>
+                      Overload:
+                    </TableCell>
+                    <TableCell align="right" colSpan={2}>
+                      {(() => {
+                        // Calculate course loads
+                        const courseLoads = instructor.courses.reduce((sum, course) => {
+                          const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1);
+                          const labLoad = (course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1);
+                          const tutorialLoad = (course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1);
+                          const courseLoad = lectureLoad + labLoad + tutorialLoad;
+                          return sum + courseLoad;
+                        }, 0);
+                        
+                        // Add additional hours
+                        const additionalHours = 
+                          (instructor.hours?.hdpHour || 0) + 
+                          (instructor.hours?.positionHour || 0) + 
+                          (instructor.hours?.batchAdvisor || 0);
+                        
+                        // Calculate total loads
+                        const totalLoads = courseLoads + additionalHours;
+                        
+                        // Calculate overload (Total Loads - 12)
+                        const overload = totalLoads - 12;
+                        const roundedOverload = Math.round(overload * 100) / 100;
+                        // Show 0 instead of negative values
+                        const displayValue = roundedOverload > 0 ? roundedOverload : 0;
+                        
+                        return (
+                          <Chip
+                            label={displayValue}
+                            color={roundedOverload > 0 ? "success" : "default"}
+                            sx={{ 
+                              minWidth: 60, 
+                              fontWeight: 'bold',
+                              fontSize: '0.875rem'
+                            }}
+                          />
+                        );
+                      })()} 
+                    </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -997,12 +1282,13 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
               {/* Scientific Director Rejection Details - Only show when rejected */}
               {scientificDirectorRejected && (
                 <Box sx={{ 
-                  mt: 3, 
-                  p: 2, 
+                  mt: 4, 
+                  p: 3, 
                   borderRadius: 2,
                   bgcolor: alpha(theme.palette.error.main, 0.04),
                   border: '1px solid',
                   borderColor: alpha(theme.palette.error.main, 0.15),
+                  width: '100%'
                 }}>
                   <Typography variant="subtitle1" sx={{ 
                     mb: 1.5, 
@@ -1156,9 +1442,12 @@ const ViceDirectorCourses = () => {
         return;
       }
 
+      // Keep track of all updated instructors
+      const updatedInstructorsList = [];
+
       // Call API for each instructor's courses
       await Promise.all(
-        coursesToApprove.map(async ({ instructorId, courses }) => {
+        coursesToApprove.map(async ({ instructorId, courses, instructorName }) => {
           const response = await fetch(
             `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/v1/courses/bulk-approve-vice-director/${instructorId}`,
             {
@@ -1177,13 +1466,35 @@ const ViceDirectorCourses = () => {
           if (!response.ok) {
             throw new Error('Failed to approve courses');
           }
+
+          // Find the full instructor object
+          const instructor = instructors.find(i => i._id === instructorId);
+          if (instructor) {
+            // Update the courses status locally
+            const updatedCourses = instructor.courses.map(course => {
+              if (courses.some(c => c._id === course._id)) {
+                return { ...course, status: 'vice-director-approved' };
+              }
+              return course;
+            });
+            
+            // Add to the list of updated instructors
+            updatedInstructorsList.push({ ...instructor, courses: updatedCourses });
+          }
         })
       );
+
+      // Update the instructors state with all the changes
+      setInstructors(prevInstructors => {
+        return prevInstructors.map(instructor => {
+          const updatedInstructor = updatedInstructorsList.find(ui => ui._id === instructor._id);
+          return updatedInstructor || instructor;
+        });
+      });
 
       toast.success('Successfully approved all eligible courses');
       setBulkApprovalDialogOpen(false);
       setBulkApprovalConfirmed(false);
-      fetchInstructorCourses(); // Refresh the list
     } catch (error) {
       console.error('Error in bulk approval:', error);
       toast.error('Failed to complete bulk approval');
@@ -1279,7 +1590,12 @@ const ViceDirectorCourses = () => {
 
   useEffect(() => {
     fetchInstructorCourses();
-  }, [page, rowsPerPage]);
+  }, []);
+  
+  // Reset to first page when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [searchTerm, filterStatus, filterSchool, filterDepartment]);
 
   const handleReviewClick = (instructor, action) => {
     setSelectedInstructor(instructor);
@@ -1423,6 +1739,17 @@ const ViceDirectorCourses = () => {
     setPage(0);
   };
 
+  // Handle selecting an instructor for bulk operations
+  const handleSelectInstructor = (instructorId) => {
+    setSelectedInstructors(prev => {
+      if (prev.includes(instructorId)) {
+        return prev.filter(id => id !== instructorId);
+      } else {
+        return [...prev, instructorId];
+      }
+    });
+  };
+
   // Get unique schools and departments
   const schools = [...new Set(instructors.map(instructor => instructor.school))].sort();
   const allDepartments = [...new Set(instructors.map(instructor => instructor.department))].sort();
@@ -1475,6 +1802,9 @@ const ViceDirectorCourses = () => {
     return matchesSearch && matchesSchool && matchesDepartment && matchesStatus;
   });
   
+  // Update total count for pagination
+  const filteredInstructorsCount = filteredInstructors.length;
+  
   // Sort instructors: pending at top, then by most recent status change
   filteredInstructors.sort((a, b) => {
     // Check if instructor has pending courses (dean-approved)
@@ -1500,6 +1830,12 @@ const ViceDirectorCourses = () => {
     // Sort by most recent update (descending)
     return bLatestUpdate - aLatestUpdate;
   });
+  
+  // Apply pagination to the filtered and sorted instructors
+  const paginatedInstructors = filteredInstructors.slice(
+    page * rowsPerPage,
+    page * rowsPerPage + rowsPerPage
+  );
 
   const handleBulkReject = async () => {
     try {
@@ -1545,14 +1881,33 @@ const ViceDirectorCourses = () => {
           if (!response.ok) {
             throw new Error(`Failed to reject courses for ${instructor.name}`);
           }
+
+          // Update the courses status locally
+          const updatedCourses = instructor.courses.map(course => {
+            if (rejectableCourses.some(rc => rc._id === course._id)) {
+              return { ...course, status: 'vice-director-rejected' };
+            }
+            return course;
+          });
+          
+          // Add to the list of updated instructors
+          const updatedInstructor = { ...instructor, courses: updatedCourses };
+          setInstructors(prevInstructors => {
+            return prevInstructors.map(inst => {
+              if (inst._id === instructor._id) {
+                return updatedInstructor;
+              }
+              return inst;
+            });
+          });
         })
       );
 
-      toast.success('Successfully rejected all eligible courses and returned to Dean for review');
+      toast.success('Successfully rejected all selected courses');
       setBulkRejectDialogOpen(false);
       setBulkRejectionNotes('');
-      fetchInstructorCourses();
-      window.location.reload();
+      setBulkRejectionConfirmed(false);
+      setSelectedInstructors([]);
     } catch (error) {
       console.error('Error in bulk rejection:', error);
       toast.error('Failed to reject some courses');
@@ -1739,6 +2094,7 @@ const ViceDirectorCourses = () => {
               <TableCell>Department</TableCell>
               <TableCell align="center">Total Courses</TableCell>
               <TableCell align="center">Total Workload</TableCell>
+              <TableCell align="center">Overload</TableCell>
               <TableCell align="center">Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -1749,19 +2105,31 @@ const ViceDirectorCourses = () => {
               ))
             ) : filteredInstructors.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
                   <Typography variant="body1" color="text.secondary">
                     No instructors found
                   </Typography>
                 </TableCell>
               </TableRow>
             ) : (
-              filteredInstructors.map((instructor) => (
+              paginatedInstructors.map((instructor, index) => (
                 <InstructorRow
                   key={instructor._id}
                   instructor={instructor}
-                  onApprove={() => handleReviewClick(instructor, 'approve')}
-                  onReject={() => handleRejectClick(instructor)}
+                  onApprove={fetchInstructorCourses}
+                  onReject={fetchInstructorCourses}
+                  onResubmit={fetchInstructorCourses}
+                  index={index}
+                  isSelected={selectedInstructors.includes(instructor._id)}
+                  onSelectInstructor={handleSelectInstructor}
+                  onUpdateInstructor={(updatedInstructor) => {
+                    // Update the instructor in the instructors array
+                    setInstructors(prevInstructors => 
+                      prevInstructors.map(inst => 
+                        inst._id === updatedInstructor._id ? updatedInstructor : inst
+                      )
+                    );
+                  }}
                 />
               ))
             )}
@@ -1769,7 +2137,7 @@ const ViceDirectorCourses = () => {
         </Table>
         <TablePagination
           component="div"
-          count={totalInstructors}
+          count={filteredInstructorsCount}
           page={page}
           onPageChange={handleChangePage}
           rowsPerPage={rowsPerPage}

@@ -38,7 +38,8 @@ import {
   School as ScientificDirectorIcon,
   SupervisorAccount as ViceDirectorIcon,
   AccountBalance as FinanceIcon,
-  Update as UpdateIcon
+  Update as UpdateIcon,
+  Block as BlockIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { baseURL } from '../../config';
@@ -95,7 +96,8 @@ const FinanceDashboard = () => {
       pendingPayments: 0,
       approvedPayments: 0,
       rejectedPayments: 0,
-      totalAmount: 0
+      totalAmount: 0,
+      totalPayableAmount: 0
     },
     schoolStats: [],
     recentActivity: []
@@ -118,6 +120,247 @@ const FinanceDashboard = () => {
       }
 
       const data = await response.json();
+      
+      // Calculate total payable amount if not provided by the API
+      if (data.data && !data.data.totalStats.totalPayableAmount) {
+        // Fetch courses that are pending payment
+        const pendingCoursesResponse = await fetch(
+          `${baseURL}/api/v1/finance/courses?status=scientific-director-approved`,
+          {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          }
+        );
+        
+        // Fetch rejected payments from FinanceCourses
+        const rejectedCoursesResponse = await fetch(
+          `${baseURL}/api/v1/finance/courses?status=finance-rejected`,
+          {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          }
+        );
+        
+        // Get rejected payments count from the API response
+        // If it's not provided, fetch it from the finance courses API
+        if (!data.data.totalStats.rejectedPayments) {
+          let rejectedPayments = 0;
+          if (rejectedCoursesResponse.ok) {
+            const rejectedCoursesData = await rejectedCoursesResponse.json();
+            const rejectedCourses = rejectedCoursesData.data?.courses || [];
+            
+            // Count the number of rejected payments as shown in the chart
+            // This should match the logic used in the Payment Distribution by School chart
+            rejectedPayments = rejectedCourses.length;
+            
+            // Add rejected payments count to the stats
+            if (data.data && data.data.totalStats) {
+              data.data.totalStats.rejectedPayments = rejectedPayments;
+            }
+            
+            // Also update school stats if they exist
+            if (data.data.schoolStats && data.data.schoolStats.length > 0) {
+              // Group rejected courses by school
+              const rejectedBySchool = {};
+              rejectedCourses.forEach(course => {
+                const school = course.school || 'Unknown';
+                rejectedBySchool[school] = (rejectedBySchool[school] || 0) + 1;
+              });
+              
+              // Update school stats with rejected payments
+              data.data.schoolStats.forEach(schoolStat => {
+                const schoolName = schoolStat.school;
+                schoolStat.rejectedPayments = rejectedBySchool[schoolName] || 0;
+              });
+            }
+          }
+        }
+        
+        if (pendingCoursesResponse.ok) {
+          const pendingCoursesData = await pendingCoursesResponse.json();
+          const pendingCourses = pendingCoursesData.data?.courses || [];
+          
+          // Calculate total payable amount based on instructor loads
+          let totalPayableAmount = 0;
+          
+          // Group courses by instructor
+          const instructorCourses = {};
+          pendingCourses.forEach(course => {
+            if (course.instructor && course.instructor._id) {
+              if (!instructorCourses[course.instructor._id]) {
+                instructorCourses[course.instructor._id] = [];
+              }
+              instructorCourses[course.instructor._id].push(course);
+            }
+          });
+          
+          // Calculate total load and payment for each instructor
+          for (const instructorId in instructorCourses) {
+            const courses = instructorCourses[instructorId];
+            
+            // Fetch instructor hours
+            const hoursResponse = await fetch(`${baseURL}/api/v1/users/${instructorId}/hours`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            let hdpHours = 0;
+            let positionHours = 0;
+            let batchAdvisorHours = 0;
+            
+            if (hoursResponse.ok) {
+              const hoursData = await hoursResponse.json();
+              if (hoursData.status === 'success' && hoursData.data) {
+                hdpHours = Number(hoursData.data.hdpHour || 0);
+                positionHours = Number(hoursData.data.positionHour || 0);
+                batchAdvisorHours = Number(hoursData.data.batchAdvisor || 0);
+              }
+            }
+            
+            // Calculate total load for this instructor
+            let totalLoad = courses.reduce((sum, course) => {
+              const lectureHours = course.Hourfor?.lecture || 0;
+              const lectureSections = course.Number_of_Sections?.lecture || 1;
+              const labHours = course.Hourfor?.lab || 0;
+              const labSections = course.Number_of_Sections?.lab || 0;
+              const tutorialHours = course.Hourfor?.tutorial || 0;
+              const tutorialSections = course.Number_of_Sections?.tutorial || 0;
+              
+              const courseLoad = (
+                (lectureHours * lectureSections) + 
+                (labHours * 0.67 * labSections) + 
+                (tutorialHours * 0.67 * tutorialSections)
+              );
+              
+              return sum + courseLoad;
+            }, 0);
+            
+            // Add instructor additional hours
+            totalLoad += hdpHours + positionHours + batchAdvisorHours;
+            
+            // Round to 2 decimal places
+            totalLoad = Math.round(totalLoad * 100) / 100;
+            
+            // Estimate payment based on overload hours (Total Load - 12) using a default rate
+            const defaultRatePerLoad = 1000; // Default rate per load unit
+            const overloadHours = totalLoad > 12 ? Math.round((totalLoad - 12) * 100) / 100 : 0;
+            const estimatedPayment = overloadHours * defaultRatePerLoad;
+            
+            totalPayableAmount += estimatedPayment;
+          }
+          
+          // Update the stats with calculated payable amount
+          data.data.totalStats.totalPayableAmount = totalPayableAmount;
+        }
+      }
+      
+      // Fetch recent finance activity if not provided or empty
+      if (!data.data.recentActivity || data.data.recentActivity.length === 0) {
+        // Create an array to store all finance-related activities
+        let allActivities = [];
+        
+        // 1. Fetch finance course approvals/rejections
+        const financeCoursesResponse = await fetch(
+          `${baseURL}/api/v1/finance/courses?limit=50`,
+          {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          }
+        );
+        
+        if (financeCoursesResponse.ok) {
+          const financeCoursesData = await financeCoursesResponse.json();
+          const financeCourses = financeCoursesData.data?.courses || [];
+          
+          // Extract activity from finance courses
+          const courseActivities = financeCourses
+            .filter(course => 
+              course.status === 'finance-approved' || 
+              course.status === 'finance-rejected' ||
+              course.status === 'finance-review' ||
+              course.status === 'scientific-director-approved'
+            )
+            .map(course => {
+              // Determine activity type based on status
+              let type = 'pending';
+              if (course.status === 'finance-approved') type = 'approved';
+              if (course.status === 'finance-rejected') type = 'rejected';
+              
+              // Get the most recent approval history entry for this course
+              const financeAction = course.approvalHistory?.find(history => 
+                history.role === 'finance' && 
+                (history.status === 'approved' || history.status === 'rejected')
+              );
+              
+              return {
+                type,
+                category: 'finance',
+                instructor: course.instructor?.name || 'Unknown Instructor',
+                department: course.department || 'Unknown Department',
+                school: course.school || 'Unknown School',
+                course: `${course.code}: ${course.title}`,
+                status: course.status,
+                amount: course.paymentAmount || 0,
+                remarks: financeAction?.remarks || course.remarks || '',
+                timestamp: financeAction?.timestamp || course.updatedAt || course.createdAt,
+                processedBy: financeAction?.user?.name || 'Finance Department'
+              };
+            });
+          
+          allActivities = [...allActivities, ...courseActivities];
+        }
+        
+        // 2. Fetch payment records
+        const paymentsResponse = await fetch(
+          `${baseURL}/api/v1/finance/payments?limit=50`,
+          {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          }
+        );
+        
+        if (paymentsResponse.ok) {
+          const paymentsData = await paymentsResponse.json();
+          const payments = paymentsData.data?.payments || [];
+          
+          // Extract activity from payments
+          const paymentActivities = payments.map(payment => {
+            return {
+              type: 'approved',
+              category: 'finance',
+              instructor: payment.instructor?.name || 'Unknown Instructor',
+              department: payment.instructor?.department || 'Unknown Department',
+              school: payment.instructor?.school || 'Unknown School',
+              course: payment.courses?.map(c => c.code).join(', ') || '',
+              status: 'payment-processed',
+              amount: payment.totalPayment || 0,
+              remarks: payment.remarks || 'Payment processed',
+              timestamp: payment.updatedAt || payment.createdAt,
+              processedBy: payment.processedBy?.name || 'Finance Department'
+            };
+          });
+          
+          allActivities = [...allActivities, ...paymentActivities];
+        }
+        
+        // Sort activities by timestamp (newest first)
+        allActivities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        // Limit to the most recent 10 activities
+        allActivities = allActivities.slice(0, 10);
+        
+        // Update the data with the fetched activities
+        if (allActivities.length > 0) {
+          data.data.recentActivity = allActivities;
+        }
+      }
+      
       setStats(data.data);
       enqueueSnackbar('Dashboard data updated successfully', { variant: 'success' });
     } catch (error) {
@@ -149,8 +392,8 @@ const FinanceDashboard = () => {
           boxShadow: theme.shadows[8]
         }
       }}>
-        <CardContent>
-          <Stack direction="row" alignItems="center" spacing={2}>
+        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+          <Stack direction="row" alignItems="flex-start" spacing={2}>
             <Box
               sx={{
                 backgroundColor: `${color}15`,
@@ -158,20 +401,41 @@ const FinanceDashboard = () => {
                 p: 1.5,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                flexShrink: 0
               }}
             >
               <Icon sx={{ color: color, fontSize: 32 }} />
             </Box>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="h4" component="div" sx={{ mb: 0.5 }}>
+            <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+              <Typography 
+                variant="h5" 
+                component="div" 
+                sx={{ 
+                  mb: 0.5,
+                  fontWeight: 600,
+                  wordBreak: 'break-word',
+                  lineHeight: 1.2,
+                  fontSize: { xs: '1.25rem', sm: '1.5rem' }
+                }}
+              >
                 {value}
               </Typography>
-              <Typography color="text.secondary" variant="body2">
+              <Typography color="text.secondary" variant="body2" sx={{ fontWeight: 500 }}>
                 {title}
               </Typography>
               {subtitle && (
-                <Typography color="text.secondary" variant="caption" sx={{ display: 'block' }}>
+                <Typography 
+                  color="text.secondary" 
+                  variant="caption" 
+                  sx={{ 
+                    display: 'block',
+                    mt: 0.5,
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                >
                   {subtitle}
                 </Typography>
               )}
@@ -203,7 +467,7 @@ const FinanceDashboard = () => {
 
       {/* Stats Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={4} lg={2.4}>
           {loading ? (
             <StatCardSkeleton />
           ) : (
@@ -215,7 +479,7 @@ const FinanceDashboard = () => {
             />
           )}
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={4} lg={2.4}>
           {loading ? (
             <StatCardSkeleton />
           ) : (
@@ -227,7 +491,7 @@ const FinanceDashboard = () => {
             />
           )}
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={4} lg={2.4}>
           {loading ? (
             <StatCardSkeleton />
           ) : (
@@ -239,15 +503,27 @@ const FinanceDashboard = () => {
             />
           )}
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={6} lg={2.4}>
+          {loading ? (
+            <StatCardSkeleton />
+          ) : (
+            <StatCard
+              icon={BlockIcon}
+              title="Rejected Payments"
+              value={stats.totalStats.rejectedPayments || 0}
+              color={theme.palette.error.main}
+            />
+          )}
+        </Grid>
+        <Grid item xs={12} sm={6} md={6} lg={2.4}>
           {loading ? (
             <StatCardSkeleton />
           ) : (
             <StatCard
               icon={PaymentsIcon}
-              title="Total Amount"
-              value={formatCurrency(stats.totalStats.totalAmount)}
-              color={theme.palette.info.main}
+              title="Pending Payments"
+              value={formatCurrency(stats.totalStats.totalPayableAmount)}
+              color={theme.palette.secondary.main}
             />
           )}
         </Grid>
@@ -376,6 +652,8 @@ const FinanceDashboard = () => {
                               <FinanceIcon sx={{ color: theme.palette.success.main }} />
                             ) : activity.type === 'rejected' && activity.category === 'finance' ? (
                               <FinanceIcon sx={{ color: theme.palette.error.main }} />
+                            ) : activity.status === 'payment-processed' ? (
+                              <PaymentsIcon sx={{ color: theme.palette.success.main }} />
                             ) : (
                               <PendingIcon sx={{ color: theme.palette.info.main }} />
                             )}
@@ -400,16 +678,20 @@ const FinanceDashboard = () => {
                                   sx={{ 
                                     height: 20, 
                                     fontSize: '0.65rem',
-                                    backgroundColor: activity.type === 'approved' 
-                                      ? `${theme.palette.success.main}15` 
-                                      : activity.type === 'rejected'
-                                        ? `${theme.palette.error.main}15`
-                                        : `${theme.palette.info.main}15`,
-                                    color: activity.type === 'approved' 
-                                      ? theme.palette.success.main
-                                      : activity.type === 'rejected'
-                                        ? theme.palette.error.main
-                                        : theme.palette.info.main,
+                                    backgroundColor: activity.status === 'payment-processed'
+                                      ? `${theme.palette.success.dark}15`
+                                      : activity.type === 'approved' 
+                                        ? `${theme.palette.success.main}15` 
+                                        : activity.type === 'rejected'
+                                          ? `${theme.palette.error.main}15`
+                                          : `${theme.palette.info.main}15`,
+                                    color: activity.status === 'payment-processed'
+                                      ? theme.palette.success.dark
+                                      : activity.type === 'approved' 
+                                        ? theme.palette.success.main
+                                        : activity.type === 'rejected'
+                                          ? theme.palette.error.main
+                                          : theme.palette.info.main,
                                     mr: 1
                                   }} 
                                 />

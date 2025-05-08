@@ -397,6 +397,37 @@ const FinanceCourses = () => {
     }
   };
 
+  // Calculate Total Hours based on the provided formula
+  // Total Hours = (Lecture Hours * Number of Sections Lecture) + 
+  //              (Lab Hours * 0.67 * Number of Sections Lab) + 
+  //              (Tutorial Hours * 0.67 * Number of Sections Tutorial) + 
+  //              HDP Hours + Position Hours + Batch Advisor Hours
+  const calculateTotalHours = (course) => {
+    // Extract values from course, defaulting to 0 if not present
+    const lectureHours = parseFloat(course.lectureHours || 0);
+    const lectureSection = parseFloat(course.lectureSections || 1);
+    const labHours = parseFloat(course.labHours || 0);
+    const labSections = parseFloat(course.labSections || 0);
+    const tutorialHours = parseFloat(course.tutorialHours || 0);
+    const tutorialSections = parseFloat(course.tutorialSections || 0);
+    const hdpHours = parseFloat(course.hdpHours || 0);
+    const positionHours = parseFloat(course.positionHours || 0);
+    const batchAdvisorHours = parseFloat(course.batchAdvisorHours || 0);
+    
+    // Calculate using the formula
+    const totalHours = (
+      (lectureHours * lectureSection) + 
+      (labHours * 0.67 * labSections) + 
+      (tutorialHours * 0.67 * tutorialSections) + 
+      hdpHours + 
+      positionHours + 
+      batchAdvisorHours
+    );
+    
+    // Round to 2 decimal places
+    return Math.round(totalHours * 100) / 100;
+  };
+
   const calculateTotalPayment = () => {
     const base = parseFloat(paymentDetails.baseAmount) || 0;
     const hdp = parseFloat(paymentDetails.hdpAllowance) || 0;
@@ -759,21 +790,37 @@ const FinanceCourses = () => {
                     )}
                     <TableCell>
                       {(() => {
-                        // Calculate course load
+                        // Calculate course load using the new formula:
+                        // Total Hours = (Lecture Hours * Number of Sections Lecture) + 
+                        //              (Lab Hours * 0.67 * Number of Sections Lab) + 
+                        //              (Tutorial Hours * 0.67 * Number of Sections Tutorial) + 
+                        //              HDP Hours + Position Hours + Batch Advisor Hours
                         const courseLoad = courses.reduce((total, course) => {
-                          const lectureLoad = (course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 0);
-                          const labLoad = (course.Hourfor?.lab || 0) * (course.Number_of_Sections?.lab || 0);
-                          const tutorialLoad = (course.Hourfor?.tutorial || 0) * (course.Number_of_Sections?.tutorial || 0);
-                          return total + lectureLoad + labLoad + tutorialLoad;
+                          // Extract values from course, defaulting to 0 if not present
+                          const lectureHours = parseFloat(course.Hourfor?.lecture || 0);
+                          const lectureSections = parseFloat(course.Number_of_Sections?.lecture || 1);
+                          const labHours = parseFloat(course.Hourfor?.lab || 0);
+                          const labSections = parseFloat(course.Number_of_Sections?.lab || 0);
+                          const tutorialHours = parseFloat(course.Hourfor?.tutorial || 0);
+                          const tutorialSections = parseFloat(course.Number_of_Sections?.tutorial || 0);
+                          
+                          // Calculate using part of the formula for each course
+                          const courseTotalHours = (
+                            (lectureHours * lectureSections) + 
+                            (labHours * 0.67 * labSections) + 
+                            (tutorialHours * 0.67 * tutorialSections)
+                          );
+                          
+                          return total + courseTotalHours;
                         }, 0);
 
                         // Get additional hours
-                        const hdpHours = instructorHours[instructorId]?.hdpHour || 0;
-                        const positionHours = instructorHours[instructorId]?.positionHour || 0;
-                        const batchAdvisorHours = instructorHours[instructorId]?.batchAdvisor || 0;
+                        const hdpHours = parseFloat(instructorHours[instructorId]?.hdpHour || 0);
+                        const positionHours = parseFloat(instructorHours[instructorId]?.positionHour || 0);
+                        const batchAdvisorHours = parseFloat(instructorHours[instructorId]?.batchAdvisor || 0);
 
-                        // Calculate total load
-                        const totalLoad = courseLoad + hdpHours + positionHours + batchAdvisorHours;
+                        // Calculate total load using the complete formula
+                        const totalLoad = Math.round((courseLoad + hdpHours + positionHours + batchAdvisorHours) * 100) / 100;
 
                         return (
                           <Tooltip 
@@ -802,6 +849,21 @@ const FinanceCourses = () => {
                                     <Typography variant="subtitle2" sx={{ color: 'grey.100' }}>Total Load:</Typography>
                                     <Typography variant="subtitle2" sx={{ color: 'success.light' }}>{totalLoad}</Typography>
                                   </Box>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                                    <Typography variant="subtitle2" sx={{ color: 'grey.100' }}>Standard Load:</Typography>
+                                    <Typography variant="subtitle2" sx={{ color: 'info.light' }}>12</Typography>
+                                  </Box>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                                    <Typography variant="subtitle2" sx={{ color: 'grey.100' }}>Overload Hours:</Typography>
+                                    <Typography variant="subtitle2" sx={{ 
+                                      color: totalLoad > 12 ? 'success.light' : 'grey.400',
+                                      padding: totalLoad > 12 ? '2px 6px' : '2px 0',
+                                      borderRadius: '4px',
+                                      bgcolor: totalLoad > 12 ? theme => theme.palette.mode === 'dark' ? 'rgba(76, 175, 80, 0.15)' : 'rgba(76, 175, 80, 0.08)' : 'transparent'
+                                    }}>
+                                      {totalLoad > 12 ? (Math.round((totalLoad - 12) * 100) / 100) : 0}
+                                    </Typography>
+                                  </Box>
                                 </Stack>
                               </Box>
                             }
@@ -824,16 +886,40 @@ const FinanceCourses = () => {
                               gap: 0.5,
                               cursor: 'help'
                             }}>
-                              <Typography variant="body1" sx={{ fontWeight: 600 }}>{totalLoad}</Typography>
-                              <InfoIcon sx={{ 
-                                fontSize: '1rem', 
-                                color: 'primary.main',
-                                opacity: 0.8,
-                                transition: 'opacity 0.2s',
-                                '&:hover': {
-                                  opacity: 1
-                                }
-                              }} />
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <Typography variant="body1" sx={{ fontWeight: 600 }}>{totalLoad}</Typography>
+                                <InfoIcon sx={{ 
+                                  fontSize: '1rem', 
+                                  color: 'primary.main',
+                                  opacity: 0.8,
+                                  transition: 'opacity 0.2s',
+                                  '&:hover': {
+                                    opacity: 1
+                                  }
+                                }} />
+                                {totalLoad > 12 && (
+                                  <Chip
+                                    label={`Overload: ${Math.round((totalLoad - 12) * 100) / 100}`}
+                                    color="success"
+                                    size="small"
+                                    sx={{ 
+                                      height: 24, 
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      '& .MuiChip-label': { px: 1 },
+                                      bgcolor: theme => theme.palette.mode === 'dark' 
+                                        ? 'rgba(76, 175, 80, 0.25)' 
+                                        : theme.palette.success.main,
+                                      color: theme => theme.palette.mode === 'dark' 
+                                        ? theme.palette.success.light 
+                                        : '#fff',
+                                      border: theme => theme.palette.mode === 'dark' 
+                                        ? `1px solid ${theme.palette.success.light}` 
+                                        : 'none'
+                                    }}
+                                  />
+                                )}
+                              </Stack>
                             </Box>
                           </Tooltip>
                         );
@@ -1181,6 +1267,11 @@ Please provide a detailed reason for returning these courses:`
                                     color: (theme) => theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.grey[700],
                                     borderBottom: (theme) => `2px solid ${theme.palette.secondary.light}`
                                   }}>Number of Sections</TableCell>
+                                  <TableCell align="center" sx={{ 
+                                    fontWeight: 600, 
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.common.white : theme.palette.grey[700],
+                                    borderBottom: (theme) => `2px solid ${theme.palette.success.light}`
+                                  }}>Load</TableCell>
                                 </TableRow>
                                 <TableRow>
                                   <TableCell sx={{ borderBottom: 'none' }}></TableCell>
@@ -1220,6 +1311,11 @@ Please provide a detailed reason for returning these courses:`
                                     color: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[300] : theme.palette.grey[600],
                                     fontSize: '0.875rem'
                                   }}>Tutorial</TableCell>
+                                  <TableCell align="center" sx={{ 
+                                    fontWeight: 600, 
+                                    color: (theme) => theme.palette.mode === 'dark' ? theme.palette.success.light : theme.palette.success.dark,
+                                    fontSize: '0.875rem'
+                                  }}>Total Load</TableCell>
                                 </TableRow>
                               </TableHead>
                               <TableBody>
@@ -1240,6 +1336,29 @@ Please provide a detailed reason for returning these courses:`
                                     <TableCell align="center" sx={{ color: 'secondary.main' }}>{course.Number_of_Sections?.lecture || 0}</TableCell>
                                     <TableCell align="center" sx={{ color: 'secondary.main' }}>{course.Number_of_Sections?.lab || 0}</TableCell>
                                     <TableCell align="center" sx={{ color: 'secondary.main' }}>{course.Number_of_Sections?.tutorial || 0}</TableCell>
+                                    {/* Total Load for this course */}
+                                    <TableCell align="center" sx={{ 
+                                      color: 'success.main',
+                                      fontWeight: 600,
+                                      bgcolor: theme => theme.palette.mode === 'dark' ? 'rgba(76, 175, 80, 0.08)' : 'rgba(76, 175, 80, 0.05)',
+                                      borderRadius: '4px'
+                                    }}>
+                                      {(() => {
+                                        // Prepare course data for calculateTotalHours
+                                        const courseData = {
+                                          lectureHours: course.Hourfor?.lecture || 0,
+                                          lectureSections: course.Number_of_Sections?.lecture || 1,
+                                          labHours: course.Hourfor?.lab || 0,
+                                          labSections: course.Number_of_Sections?.lab || 0,
+                                          tutorialHours: course.Hourfor?.tutorial || 0,
+                                          tutorialSections: course.Number_of_Sections?.tutorial || 0,
+                                          hdpHours: 0, // These are instructor-level, not course-level
+                                          positionHours: 0,
+                                          batchAdvisorHours: 0
+                                        };
+                                        return calculateTotalHours(courseData);
+                                      })()}
+                                    </TableCell>
                                   </TableRow>
                                 ))}
                                 {/* Totals row */}
@@ -1270,6 +1389,34 @@ Please provide a detailed reason for returning these courses:`
                                   </TableCell>
                                   <TableCell align="center">
                                     {courses.reduce((sum, course) => sum + (course.Number_of_Sections?.tutorial || 0), 0)}
+                                  </TableCell>
+                                  {/* Total Load */}
+                                  <TableCell align="center" sx={{ color: 'success.main' }}>
+                                    {(() => {
+                                      // Calculate sum of all course loads plus instructor additional hours
+                                      const coursesLoad = courses.reduce((sum, course) => {
+                                        const courseData = {
+                                          lectureHours: course.Hourfor?.lecture || 0,
+                                          lectureSections: course.Number_of_Sections?.lecture || 1,
+                                          labHours: course.Hourfor?.lab || 0,
+                                          labSections: course.Number_of_Sections?.lab || 0,
+                                          tutorialHours: course.Hourfor?.tutorial || 0,
+                                          tutorialSections: course.Number_of_Sections?.tutorial || 0,
+                                          hdpHours: 0,
+                                          positionHours: 0,
+                                          batchAdvisorHours: 0
+                                        };
+                                        return sum + calculateTotalHours(courseData);
+                                      }, 0);
+                                      
+                                      // Add instructor additional hours
+                                      const hdpHours = parseFloat(instructorHours[instructorId]?.hdpHour || 0);
+                                      const positionHours = parseFloat(instructorHours[instructorId]?.positionHour || 0);
+                                      const batchAdvisorHours = parseFloat(instructorHours[instructorId]?.batchAdvisor || 0);
+                                      
+                                      // Return total with 2 decimal places
+                                      return Math.round((coursesLoad + hdpHours + positionHours + batchAdvisorHours) * 100) / 100;
+                                    })()}
                                   </TableCell>
                                 </TableRow>
                               </TableBody>

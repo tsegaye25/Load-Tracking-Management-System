@@ -394,12 +394,26 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
             }} 
           />
         </TableCell>
+        <TableCell align="center" sx={{ p: { xs: 1, sm: 2 } }}>
+          <Tooltip title="Overload = Total Loads - 12 (Only positive values generate payment)">
+            <Chip 
+              label={Math.max(0, Math.round((instructor.totalWorkload - 12) * 100) / 100)} 
+              color={instructor.totalWorkload > 12 ? "success" : "default"} 
+              size="small" 
+              sx={{ 
+                minWidth: 40,
+                height: { xs: 22, sm: 24 },
+                fontSize: { xs: '0.7rem', sm: '0.75rem' } 
+              }} 
+            />
+          </Tooltip>
+        </TableCell>
         <TableCell align="right" sx={{ p: { xs: 1, sm: 2 } }}>
           {renderActionButtons()}
         </TableCell>
       </TableRow>
       <TableRow>
-        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
+        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
           <Collapse in={open} timeout="auto" unmountOnExit>
             <Box sx={{ margin: 2 }}>
               <Typography variant="h6" gutterBottom component="div">
@@ -408,14 +422,39 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>Course Code</TableCell>
-                    <TableCell>Title</TableCell>
-                    <TableCell align="right">Credit Hours</TableCell>
-                    <TableCell align="right">Lecture</TableCell>
-                    <TableCell align="right">Lab</TableCell>
-                    <TableCell align="right">Tutorial</TableCell>
-                    <TableCell align="right">Total Hours</TableCell>
-                    <TableCell>Status</TableCell>
+                    <TableCell rowSpan={2}>Course Code</TableCell>
+                    <TableCell rowSpan={2}>Title</TableCell>
+                    <TableCell 
+                      colSpan={4} 
+                      align="center" 
+                      sx={{ 
+                        bgcolor: (theme) => alpha(theme.palette.primary.light, 0.15),
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Hours for
+                    </TableCell>
+                    <TableCell 
+                      colSpan={3} 
+                      align="center"
+                      sx={{ 
+                        bgcolor: (theme) => alpha(theme.palette.secondary.light, 0.15),
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Number of Sections
+                    </TableCell>
+                    <TableCell rowSpan={2} align="right">Total Loads</TableCell>
+                    <TableCell rowSpan={2}>Status</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell align="right" sx={{ bgcolor: (theme) => alpha(theme.palette.primary.light, 0.1) }}>Credit</TableCell>
+                    <TableCell align="right" sx={{ bgcolor: (theme) => alpha(theme.palette.primary.light, 0.1) }}>Lecture</TableCell>
+                    <TableCell align="right" sx={{ bgcolor: (theme) => alpha(theme.palette.primary.light, 0.1) }}>Lab</TableCell>
+                    <TableCell align="right" sx={{ bgcolor: (theme) => alpha(theme.palette.primary.light, 0.1) }}>Tutorial</TableCell>
+                    <TableCell align="right" sx={{ bgcolor: (theme) => alpha(theme.palette.secondary.light, 0.1) }}>Lecture</TableCell>
+                    <TableCell align="right" sx={{ bgcolor: (theme) => alpha(theme.palette.secondary.light, 0.1) }}>Lab</TableCell>
+                    <TableCell align="right" sx={{ bgcolor: (theme) => alpha(theme.palette.secondary.light, 0.1) }}>Tutorial</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -430,12 +469,30 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                         <TableCell align="right">{course.Hourfor?.lecture || 0}</TableCell>
                         <TableCell align="right">{course.Hourfor?.lab || 0}</TableCell>
                         <TableCell align="right">{course.Hourfor?.tutorial || 0}</TableCell>
+                        <TableCell align="right">{course.Number_of_Sections?.lecture || 1}</TableCell>
+                        <TableCell align="right">{course.Number_of_Sections?.lab || 1}</TableCell>
+                        <TableCell align="right">{course.Number_of_Sections?.tutorial || 1}</TableCell>
                         <TableCell align="right">
-                          <Chip
-                            label={course.totalHours}
-                            color="primary"
-                            sx={{ minWidth: 60 }}
-                          />
+                          <Tooltip title={
+                            `Formula: (${course.Hourfor?.lecture || 0} * ${course.Number_of_Sections?.lecture || 1}) + 
+                            (${course.Hourfor?.lab || 0} * 0.67 * ${course.Number_of_Sections?.lab || 1}) + 
+                            (${course.Hourfor?.tutorial || 0} * 0.67 * ${course.Number_of_Sections?.tutorial || 1})`
+                          }>
+                            <Chip
+                              label={
+                                // Calculate using the correct formula
+                                Math.round(
+                                  (
+                                    ((course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1)) +
+                                    ((course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1)) +
+                                    ((course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1))
+                                  ) * 100
+                                ) / 100
+                              }
+                              color="primary"
+                              sx={{ minWidth: 60 }}
+                            />
+                          </Tooltip>
                         </TableCell>
                         <TableCell>
                           <Chip
@@ -460,46 +517,97 @@ const InstructorRow = ({ instructor, onApprove, onReject }) => {
                     </React.Fragment>
                   ))}
                   <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05) }}>
-                    <TableCell colSpan={6} align="right" sx={{ fontWeight: 'bold' }}>
+                    <TableCell colSpan={9} align="right" sx={{ fontWeight: 'bold' }}>
                       Course Hours Total:
                     </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                      {instructor.courses.reduce((sum, course) => sum + course.totalHours, 0)}
+                    <TableCell align="right">
+                      <Tooltip title="Sum of all course loads calculated using the formula">
+                        <Chip
+                          label={
+                            Math.round(instructor.courses.reduce((sum, course) => {
+                              // Calculate each course's load using the correct formula
+                              const courseLoad = (
+                                ((course.Hourfor?.lecture || 0) * (course.Number_of_Sections?.lecture || 1)) +
+                                ((course.Hourfor?.lab || 0) * 0.67 * (course.Number_of_Sections?.lab || 1)) +
+                                ((course.Hourfor?.tutorial || 0) * 0.67 * (course.Number_of_Sections?.tutorial || 1))
+                              );
+                              return sum + courseLoad;
+                            }, 0) * 100) / 100
+                          }
+                          color="primary"
+                          sx={{ 
+                            minWidth: 60, 
+                            fontWeight: 'bold',
+                            fontSize: '0.875rem'
+                          }}
+                        />
+                      </Tooltip>
                     </TableCell>
                     <TableCell />
                   </TableRow>
                   <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.info.main, 0.05) }}>
-                    <TableCell colSpan={6} align="right" sx={{ fontWeight: 'bold' }}>
+                    <TableCell colSpan={9} align="right" sx={{ fontWeight: 'bold' }}>
                       Additional Hours:
                     </TableCell>
                     <TableCell align="right" colSpan={2}>
-                      <Stack spacing={1}>
-                        <Chip
-                          size="small"
-                          label={`HDP: ${instructor.hdpHour}`}
-                          color="info"
-                          variant="outlined"
-                        />
-                        <Chip
-                          size="small"
-                          label={`Position: ${instructor.positionHour}`}
-                          color="info"
-                          variant="outlined"
-                        />
-                        <Chip
-                          size="small"
-                          label={`Advisor: ${instructor.batchAdvisor}`}
-                          color="info"
-                          variant="outlined"
-                        />
-                      </Stack>
+                      <Tooltip title="Additional hours added to the total workload">
+                        <Stack spacing={1}>
+                          <Chip
+                            size="small"
+                            label={`HDP: ${instructor.hdpHour}`}
+                            color="info"
+                            variant="outlined"
+                            sx={{ fontWeight: 'medium' }}
+                          />
+                          <Chip
+                            size="small"
+                            label={`Position: ${instructor.positionHour}`}
+                            color="info"
+                            variant="outlined"
+                            sx={{ fontWeight: 'medium' }}
+                          />
+                          <Chip
+                            size="small"
+                            label={`Advisor: ${instructor.batchAdvisor}`}
+                            color="info"
+                            variant="outlined"
+                            sx={{ fontWeight: 'medium' }}
+                          />
+                          <Chip
+                            size="small"
+                            label={`Total: ${Math.round((instructor.hdpHour + instructor.positionHour + instructor.batchAdvisor) * 100) / 100}`}
+                            color="info"
+                            sx={{ fontWeight: 'bold' }}
+                          />
+                        </Stack>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
 
-                  {/* Finance Rejection Details Row - Moved below Additional Hours */}
+                  {/* Overload Row - Shows Total Loads - 12 */}
+                  <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.success.main, 0.05) }}>
+                    <TableCell colSpan={9} align="right" sx={{ fontWeight: 'bold' }}>
+                      Overload (Total Loads - 12):
+                    </TableCell>
+                    <TableCell align="right" colSpan={2}>
+                      <Tooltip title="Overload = Total Loads - 12 (Only positive values generate payment)">
+                        <Chip
+                          label={Math.max(0, Math.round((instructor.totalWorkload - 12) * 100) / 100)}
+                          color={instructor.totalWorkload > 12 ? "success" : "default"}
+                          sx={{ 
+                            minWidth: 60, 
+                            fontWeight: 'bold',
+                            fontSize: '0.875rem'
+                          }}
+                        />
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+
+                  {/* Finance Rejection Details Row - Moved below Overload */}
                   {instructor.courses.some(course => course.status === 'finance-rejected') && (
                     <TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.error.light, 0.05) }}>
-                      <TableCell colSpan={8} sx={{ py: 1, borderBottom: '1px dashed', borderColor: 'divider' }}>
+                      <TableCell colSpan={11} sx={{ py: 1, borderBottom: '1px dashed', borderColor: 'divider' }}>
                         <Box sx={{ px: 1 }}>
                           <Typography variant="subtitle2" color="error.main" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <InfoIcon fontSize="small" />
@@ -983,26 +1091,57 @@ const ScientificDirectorCourses = () => {
               additionalHours = hoursData.data;
             }
 
-            // Calculate total workload
-            const totalWorkload = instructor.courses.reduce((sum, course) => {
-              const courseHours = (
-                (course.Hourfor?.creaditHours || 0) +
-                (course.Hourfor?.lecture || 0) +
-                (course.Hourfor?.lab || 0) +
-                (course.Hourfor?.tutorial || 0)
+            // Calculate course workload component using the correct formula
+            const courseWorkload = instructor.courses.reduce((sum, course) => {
+              // Get the hours and sections
+              const lectureHours = course.Hourfor?.lecture || 0;
+              const labHours = course.Hourfor?.lab || 0;
+              const tutorialHours = course.Hourfor?.tutorial || 0;
+              
+              // Get the number of sections from the Number_of_Sections property
+              const lectureSections = course.Number_of_Sections?.lecture || 1;
+              const labSections = course.Number_of_Sections?.lab || 1;
+              const tutorialSections = course.Number_of_Sections?.tutorial || 1;
+              
+              // Calculate using the formula for this course:
+              // Course Load = (Lecture Hours * Number of Sections Lecture) + 
+              //              (Lab Hours * 0.67 * Number of Sections Lab) + 
+              //              (Tutorial Hours * 0.67 * Number of Sections Tutorial)
+              const courseLoad = (
+                (lectureHours * lectureSections) +
+                (labHours * 0.67 * labSections) +
+                (tutorialHours * 0.67 * tutorialSections)
               );
-              return sum + courseHours;
+              
+              return sum + courseLoad;
             }, 0);
 
+            // Get additional hours
+            const hdpHours = additionalHours.hdpHour || 0;
+            const positionHours = additionalHours.positionHour || 0;
+            const batchAdvisorHours = additionalHours.batchAdvisor || 0;
+            
+            // Calculate final total loads according to the exact formula:
+            // Total Loads = (Lecture Hours * Number of Sections Lecture) + 
+            //               (Lab Hours * 0.67 * Number of Sections Lab) + 
+            //               (Tutorial Hours * 0.67 * Number of Sections Tutorial) + 
+            //               HDP Hours + Position Hours + Batch Advisor Hours
+            const finalTotalLoads = (
+              courseWorkload + 
+              hdpHours + 
+              positionHours + 
+              batchAdvisorHours
+            );
+            
+            // Round to 2 decimal places for better readability
+            const roundedTotalLoads = Math.round(finalTotalLoads * 100) / 100;
+            
             return {
               ...instructor,
-              hdpHour: additionalHours.hdpHour || 0,
-              positionHour: additionalHours.positionHour || 0,
-              batchAdvisor: additionalHours.batchAdvisor || 0,
-              totalWorkload: totalWorkload + 
-                (additionalHours.hdpHour || 0) + 
-                (additionalHours.positionHour || 0) + 
-                (additionalHours.batchAdvisor || 0)
+              hdpHour: hdpHours,
+              positionHour: positionHours,
+              batchAdvisor: batchAdvisorHours,
+              totalWorkload: roundedTotalLoads
             };
           } catch (error) {
             console.error('Error fetching hours for instructor:', instructor._id, error);
@@ -1206,14 +1345,15 @@ const ScientificDirectorCourses = () => {
                 <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' }, minWidth: '120px', p: { xs: 1, sm: 2 } }}>School</TableCell>
                 <TableCell sx={{ display: { xs: 'none', md: 'table-cell' }, minWidth: '140px', p: { xs: 1, sm: 2 } }}>Department</TableCell>
                 <TableCell align="center" sx={{ minWidth: '80px', p: { xs: 1, sm: 2 } }}>Courses</TableCell>
-                <TableCell align="center" sx={{ minWidth: '100px', p: { xs: 1, sm: 2 } }}>Total Hours</TableCell>
+                <TableCell align="center" sx={{ minWidth: '100px', p: { xs: 1, sm: 2 } }}>Total Loads</TableCell>
+                <TableCell align="center" sx={{ minWidth: '100px', p: { xs: 1, sm: 2 } }}>Overload</TableCell>
                 <TableCell align="center" sx={{ minWidth: '200px', p: { xs: 1, sm: 2 } }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {filteredInstructors.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
                     <Typography variant="body1" color="textSecondary">
                       No instructors found
                     </Typography>
