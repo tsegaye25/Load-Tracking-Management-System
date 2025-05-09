@@ -104,7 +104,7 @@ const formatDate = (dateString) => {
     : 'Not Available';
 };
 
-const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprove, onReject, onResubmitToDean }) => {
+const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprove, onReject, onResubmitToDean, expanded, onExpand }) => {
   const { user } = useSelector((state) => state.auth);
   const isInstructor = user?.role === 'instructor';
   const isDepartmentHead = user?.role === 'department-head';
@@ -190,6 +190,24 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
       return 'Administrator';
     }
   };
+  
+  // Check if course was rejected by department head
+  const isRejectedByDepartmentHead = (course) => {
+    // If the course is pending, don't show rejection message even if it was previously rejected
+    if (course.status === 'pending') {
+      return false;
+    }
+    
+    // Check if rejected by role
+    if (course.rejectedBy && course.rejectedBy.role === 'department-head') {
+      return true;
+    }
+    // Check if rejected by status
+    if (course.status === 'department-head-rejected' || course.status === 'rejected') {
+      return true;
+    }
+    return false;
+  };
 
   // Check if the course is from the department head's department
   // Removed the redundant isFromDepartmentHeadDepartment check since we already use canReviewCourse for all department head permissions
@@ -208,11 +226,9 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
   // Show requestedBy only for pending courses
   const showRequestedBy = course.status === 'pending' && course.requestedBy;
 
-  const [expanded, setExpanded] = useState(false);
-  
   const handleExpandClick = (e) => {
     e.stopPropagation();
-    setExpanded(!expanded);
+    onExpand(course._id);
   };
 
   // Check if the course is rejected
@@ -277,8 +293,8 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
           }
         }}
       >
-        {/* Rejection banner at the top */}
-        {isRejected && (
+        {/* Rejection banner for department head rejections - visible to all users */}
+        {isRejectedByDepartmentHead(course) && (
           <Box 
             sx={{
               p: 1.5,
@@ -292,7 +308,27 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
           >
             <CancelIcon fontSize="small" color="error" />
             <Typography variant="body2" sx={{ fontWeight: 500, color: 'error.main' }}>
-              {course.status === 'dean-rejected' ? 'Rejected by School Dean' : 'Rejected by Department Head'} • {rejectionDate}
+              Rejected by Department Head • {rejectionDate}
+            </Typography>
+          </Box>
+        )}
+        
+        {/* Rejection banner for School Dean rejections - only visible to Department Heads */}
+        {!isInstructor && course.status === 'dean-rejected' && (
+          <Box 
+            sx={{
+              p: 1.5,
+              bgcolor: (theme) => alpha(theme.palette.error.light, 0.1),
+              borderBottom: '1px solid',
+              borderColor: (theme) => alpha(theme.palette.error.main, 0.2),
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1
+            }}
+          >
+            <CancelIcon fontSize="small" color="error" />
+            <Typography variant="body2" sx={{ fontWeight: 500, color: 'error.main' }}>
+              Rejected by School Dean • {rejectionDate}
             </Typography>
           </Box>
         )}
@@ -794,7 +830,26 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
                       }}
                     >
                       <CancelIcon fontSize="small" />
-                      Rejection Reason
+                      Rejection Information
+                    </Typography>
+                    
+                    {/* Rejected By and Rejection Date/Time */}
+                    <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                      <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <b>Rejected By:</b> {getRejectorRole(course.rejectedBy, course.status)}
+                      </Typography>
+                      <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <b>Rejection Date:</b> {rejectionDate}
+                      </Typography>
+                      {rejectionTime && (
+                        <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <b>Rejection Time:</b> {rejectionTime}
+                        </Typography>
+                      )}
+                    </Box>
+                    
+                    <Typography variant="subtitle2" color="error.main" sx={{ fontWeight: 600, mt: 1 }}>
+                      Reason:
                     </Typography>
                     
                     <Typography variant="body1" sx={{ mt: 1.5 }}>
@@ -833,6 +888,12 @@ const Courses = () => {
   const [filteredCourses, setFilteredCourses] = useState([]);
   const [filterValue, setFilterValue] = useState('');
   const [selectedSchool, setSelectedSchool] = useState(null);
+  const [expandedCourseId, setExpandedCourseId] = useState(null);
+  
+  // Handle course expansion - only one course can be expanded at a time
+  const handleCourseExpand = (courseId) => {
+    setExpandedCourseId(expandedCourseId === courseId ? null : courseId);
+  };
   
   // Pagination states
   const [page, setPage] = useState(0);
@@ -928,7 +989,8 @@ const Courses = () => {
   useEffect(() => {
     if (!courses) return;
 
-    let filtered = [...courses];
+    // Make sure courses is defined before spreading
+    let filtered = courses ? [...courses] : [];
 
     // For instructors, show only courses from their school
     if (user?.role === 'instructor' && user?.school) {
@@ -939,6 +1001,9 @@ const Courses = () => {
     if (user?.role === 'department-head' && user?.school) {
       filtered = filtered.filter(course => course.school === user.school);
     }
+    
+    // For admin users, show all courses (no filtering by school)
+    // This ensures admin users can see all courses in the system
 
     // Apply search filter
     if (filterValue) {
@@ -1119,9 +1184,13 @@ const Courses = () => {
           course.requestedBy?._id === user._id && 
           ['pending', 'dean-review'].includes(course.status)
         ),
+        schoolCourses: filteredCourses.filter(course => 
+          course.school === user.school
+        ),
         othersAssigned: filteredCourses.filter(course =>
           course.instructor && 
-          course.instructor._id !== user._id
+          course.instructor._id !== user._id &&
+          course.school === user.school
         )
       };
 
@@ -1131,11 +1200,13 @@ const Courses = () => {
         case 2: return categorizedCourses.available?.slice(startIndex, endIndex) || [];
         case 3: return categorizedCourses.rejected?.slice(startIndex, endIndex) || [];
         case 4: return categorizedCourses.pending?.slice(startIndex, endIndex) || [];
-        case 5: return categorizedCourses.othersAssigned?.slice(startIndex, endIndex) || [];
+        case 5: return categorizedCourses.schoolCourses?.slice(startIndex, endIndex) || [];
+        case 6: return categorizedCourses.othersAssigned?.slice(startIndex, endIndex) || [];
         default: return [];
       }
     } else {
-      return filteredCourses.slice(startIndex, endIndex);
+      // For admin and other roles, return a slice of filtered courses
+      return filteredCourses?.slice(startIndex, endIndex) || [];
     }
   };
 
@@ -1198,9 +1269,13 @@ const Courses = () => {
           course.requestedBy?._id === user._id && 
           ['pending', 'dean-review'].includes(course.status)
         ),
+        schoolCourses: filteredCourses.filter(course => 
+          course.school === user.school
+        ),
         othersAssigned: filteredCourses.filter(course =>
           course.instructor && 
-          course.instructor._id !== user._id
+          course.instructor._id !== user._id &&
+          course.school === user.school
         )
       };
 
@@ -1210,11 +1285,13 @@ const Courses = () => {
         case 2: return categorizedCourses.available?.length || 0;
         case 3: return categorizedCourses.rejected?.length || 0;
         case 4: return categorizedCourses.pending?.length || 0;
-        case 5: return categorizedCourses.othersAssigned?.length || 0;
+        case 5: return categorizedCourses.schoolCourses?.length || 0;
+        case 6: return categorizedCourses.othersAssigned?.length || 0;
         default: return 0;
       }
     } else {
-      return filteredCourses.length;
+      // For admin and other roles, return the total count of filtered courses
+      return filteredCourses?.length || 0;
     }
   };
 
@@ -2017,23 +2094,7 @@ const Courses = () => {
                 />
               </Grid>
               
-              {/* School filter - inline */}
-              <Grid item xs={12} sm={6} md={3} lg={2.5}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>School</InputLabel>
-                  <Select
-                    value={filterSchool}
-                    onChange={(e) => setFilterSchool(e.target.value)}
-                    label="School"
-                    sx={{ borderRadius: 1.5 }}
-                  >
-                    <MenuItem value="">All Schools</MenuItem>
-                    {schools.map((school) => (
-                      <MenuItem key={school} value={school}>{school}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
+              {/* School filter removed for instructors */}
 
               {/* Department filter - inline */}
               <Grid item xs={12} sm={6} md={3} lg={2.5}>
@@ -2046,12 +2107,13 @@ const Courses = () => {
                     sx={{ borderRadius: 1.5 }}
                   >
                     <MenuItem value="">All Departments</MenuItem>
-                    {filterSchool && departments[filterSchool] ? (
-                      departments[filterSchool].map((dept) => (
+                    {/* Only show departments from instructor's school */}
+                    {user?.role === 'instructor' && user?.school && departments[user.school] ? (
+                      departments[user.school].map((dept) => (
                         <MenuItem key={dept} value={dept}>{dept}</MenuItem>
                       ))
                     ) : (
-                      // Create a flat array of MenuItems
+                      // Fallback to show all departments grouped by school
                       Object.entries(departments).flatMap(([school, depts]) => [
                         <MenuItem key={`${school}-header`} disabled sx={{ fontWeight: 600, pl: 2 }}>
                           {school}
@@ -2754,21 +2816,37 @@ const Courses = () => {
               });
             }
             
-            // Only show Other Instructors tab if there are courses assigned to others
-            if (categorizedCourses.othersAssigned?.length > 0) {
-              visibleTabs.push({
-                index: 5,
-                label: (
-                  <Badge 
-                    badgeContent={categorizedCourses.othersAssigned?.length || 0} 
-                    color="default"
-                    max={99}
-                  >
+            // Always show School Courses tab
+            visibleTabs.push({
+              index: 5,
+              label: (
+                <Badge 
+                  badgeContent={categorizedCourses.schoolCourses?.length || 0} 
+                  color="primary"
+                  max={99}
+                >
+                  <Tooltip title="All courses in your school">
+                    <Box sx={{ pr: 1 }}>School Courses</Box>
+                  </Tooltip>
+                </Badge>
+              )
+            });
+            
+            // Always show Other Instructors tab
+            visibleTabs.push({
+              index: 6,
+              label: (
+                <Badge 
+                  badgeContent={categorizedCourses.othersAssigned?.length || 0} 
+                  color="default"
+                  max={99}
+                >
+                  <Tooltip title="Courses assigned to other instructors in your school">
                     <Box sx={{ pr: 1 }}>Other Instructors</Box>
-                  </Badge>
-                )
-              });
-            }
+                  </Tooltip>
+                </Badge>
+              )
+            });
             
             // Map the actual tab index to the visible tab index
             const tabIndexMap = visibleTabs.reduce((map, tab, i) => {
@@ -2843,7 +2921,8 @@ const Courses = () => {
                     case 2: TabIcon = AddCircleOutlineIcon; break;
                     case 3: TabIcon = CancelIcon; break;
                     case 4: TabIcon = HourglassEmptyIcon; break;
-                    case 5: TabIcon = PeopleAltIcon; break;
+                    case 5: TabIcon = SchoolIcon; break;
+                    case 6: TabIcon = PeopleAltIcon; break;
                     default: TabIcon = ViewListIcon;
                   }
                   
@@ -2913,8 +2992,8 @@ const Courses = () => {
         </Grid>
       ) : (
         <>
-          <Grid container spacing={2}>
-            {getCurrentPageItems().map((course) => (
+          <Grid container spacing={0}>
+            {(getCurrentPageItems() || []).map((course) => (
               <Grid item xs={12} key={course._id}>
                 <CourseCard
                   course={course}
@@ -2925,6 +3004,8 @@ const Courses = () => {
                   onApprove={handleApproveClick}
                   onReject={handleReject}
                   onResubmitToDean={handleResubmitClick}
+                  expanded={expandedCourseId === course._id}
+                  onExpand={handleCourseExpand}
                 />
               </Grid>
             ))}

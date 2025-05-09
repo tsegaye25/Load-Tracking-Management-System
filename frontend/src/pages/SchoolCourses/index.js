@@ -1919,11 +1919,89 @@ const SchoolCourses = () => {
       return acc;
     }, {});
     
+    // Sort courses within each instructor group by priority
+    Object.keys(grouped).forEach(instructorName => {
+      grouped[instructorName].sort((a, b) => {
+        // Priority 1: Pending approval courses (neither approved nor rejected) - highest priority
+        const aPending = !['dean-approved', 'dean-rejected', 'vice-director-approved', 'vice-director-rejected', 'scientific-director-approved', 'scientific-director-rejected', 'finance-approved', 'finance-rejected'].includes(a.status);
+        const bPending = !['dean-approved', 'dean-rejected', 'vice-director-approved', 'vice-director-rejected', 'scientific-director-approved', 'scientific-director-rejected', 'finance-approved', 'finance-rejected'].includes(b.status);
+        if (aPending && !bPending) return -1;
+        if (!aPending && bPending) return 1;
+        
+        // Priority 2: Vice director rejected courses
+        if (a.status === 'vice-director-rejected' && b.status !== 'vice-director-rejected') return -1;
+        if (a.status !== 'vice-director-rejected' && b.status === 'vice-director-rejected') return 1;
+        
+        // Priority 3: Department head approved courses waiting for dean review
+        if (a.status === 'department-head-approved' && b.status !== 'department-head-approved') return -1;
+        if (a.status !== 'department-head-approved' && b.status === 'department-head-approved') return 1;
+        
+        // Priority 4: Recently approved courses
+        if (a.status === 'dean-approved' && b.status !== 'dean-approved') return -1;
+        if (a.status !== 'dean-approved' && b.status === 'dean-approved') return 1;
+        
+        // Priority 5: Dean rejected courses
+        if (a.status === 'dean-rejected' && b.status !== 'dean-rejected') return -1;
+        if (a.status !== 'dean-rejected' && b.status === 'dean-rejected') return 1;
+        
+        // Default: Sort by update date (most recent first)
+        return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+      });
+    });
+    
+    // Sort instructor groups based on their highest priority course
+    const sortedGrouped = {};
+    Object.entries(grouped)
+      .sort(([, coursesA], [, coursesB]) => {
+        // Get the highest priority course from each instructor
+        const highestPriorityA = coursesA[0];
+        const highestPriorityB = coursesB[0];
+        
+        // Priority 1: Instructors with pending approval courses (neither approved nor rejected)
+        const approvedRejectedStatuses = ['dean-approved', 'dean-rejected', 'vice-director-approved', 'vice-director-rejected', 'scientific-director-approved', 'scientific-director-rejected', 'finance-approved', 'finance-rejected'];
+        const hasPendingApprovalA = coursesA.some(c => !approvedRejectedStatuses.includes(c.status));
+        const hasPendingApprovalB = coursesB.some(c => !approvedRejectedStatuses.includes(c.status));
+        if (hasPendingApprovalA && !hasPendingApprovalB) return -1;
+        if (!hasPendingApprovalA && hasPendingApprovalB) return 1;
+        
+        // Priority 2: Instructors with vice director rejected courses
+        const hasViceDirectorRejectedA = coursesA.some(c => c.status === 'vice-director-rejected');
+        const hasViceDirectorRejectedB = coursesB.some(c => c.status === 'vice-director-rejected');
+        if (hasViceDirectorRejectedA && !hasViceDirectorRejectedB) return -1;
+        if (!hasViceDirectorRejectedA && hasViceDirectorRejectedB) return 1;
+        
+        // Priority 3: Instructors with department head approved courses
+        const hasDeptHeadApprovedA = coursesA.some(c => c.status === 'department-head-approved');
+        const hasDeptHeadApprovedB = coursesB.some(c => c.status === 'department-head-approved');
+        if (hasDeptHeadApprovedA && !hasDeptHeadApprovedB) return -1;
+        if (!hasDeptHeadApprovedA && hasDeptHeadApprovedB) return 1;
+        
+        // Priority 4: Instructors with recently approved courses
+        const hasRecentlyApprovedA = coursesA.some(c => c.status === 'dean-approved');
+        const hasRecentlyApprovedB = coursesB.some(c => c.status === 'dean-approved');
+        if (hasRecentlyApprovedA && !hasRecentlyApprovedB) return -1;
+        if (!hasRecentlyApprovedA && hasRecentlyApprovedB) return 1;
+        
+        // Priority 5: Instructors with dean rejected courses
+        const hasDeanRejectedA = coursesA.some(c => c.status === 'dean-rejected');
+        const hasDeanRejectedB = coursesB.some(c => c.status === 'dean-rejected');
+        if (hasDeanRejectedA && !hasDeanRejectedB) return -1;
+        if (!hasDeanRejectedA && hasDeanRejectedB) return 1;
+        
+        // Default: Sort by most recent update
+        const latestUpdateA = Math.max(...coursesA.map(c => new Date(c.updatedAt || 0).getTime()));
+        const latestUpdateB = Math.max(...coursesB.map(c => new Date(c.updatedAt || 0).getTime()));
+        return latestUpdateB - latestUpdateA;
+      })
+      .forEach(([instructorName, courses]) => {
+        sortedGrouped[instructorName] = courses;
+      });
+    
     // Update total count for pagination based on the number of instructor groups
-    const totalGroups = Object.keys(grouped).length;
+    const totalGroups = Object.keys(sortedGrouped).length;
     setTotalCount(totalGroups);
     
-    return grouped;
+    return sortedGrouped;
   }, [courses, searchTerm, filterStatus, filterDepartment]);
 
   return (
