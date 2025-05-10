@@ -99,11 +99,7 @@ const forgotPassword = catchAsync(async (req, res, next) => {
   const resetURL = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
 
   try {
-    console.log('Creating email instance for password reset...');
     const emailInstance = new Email();
-    
-    console.log('Sending password reset email to:', user.email);
-    console.log('Reset URL:', resetURL);
     
     await emailInstance.send({
       email: user.email,
@@ -112,7 +108,6 @@ const forgotPassword = catchAsync(async (req, res, next) => {
       resetURL
     });
 
-    console.log('Password reset email sent successfully');
     res.status(200).json({
       status: 'success',
       message: 'Token sent to email!'

@@ -1066,13 +1066,7 @@ const PaymentCalculator = () => {
         )
       );
       
-      // Log the updated state for debugging
-      console.log(`Updated payment for ${instructor.name}:`, {
-        totalLoad,
-        rate,
-        totalPayment,
-        lastSavedAt: savedPayment.updatedAt || currentTime
-      });
+   
 
       enqueueSnackbar(
         existingPayment 
