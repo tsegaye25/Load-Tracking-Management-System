@@ -1002,8 +1002,9 @@ const Courses = () => {
       filtered = filtered.filter(course => course.school === user.school);
     }
     
-    // For admin users, show all courses (no filtering by school)
-    // This ensures admin users can see all courses in the system
+    // For admin users, don't apply automatic school filtering
+    // This ensures admin users can see all courses in the system by default
+    // They can still use the school filter dropdown to filter manually
 
     // Apply search filter
     if (filterValue) {
@@ -1016,9 +1017,29 @@ const Courses = () => {
       );
     }
 
-    // Apply school filter
+    // Apply school filter with improved handling
     if (filterSchool) {
-      filtered = filtered.filter(course => course.school === filterSchool);
+      console.log('Filtering by school:', filterSchool);
+      console.log('Before filtering:', filtered.length, 'courses');
+      
+      // Log all available schools in the dataset
+      const availableSchools = [...new Set(filtered.map(course => course.school))];
+      console.log('Available schools in dataset:', availableSchools);
+      
+      filtered = filtered.filter(course => {
+        // Handle potential case sensitivity or whitespace issues
+        const courseSchool = course.school?.trim();
+        const filterSchoolValue = filterSchool?.trim();
+        
+        // Log each course being checked
+        console.log('Course:', course.title || course.code, 'School:', courseSchool);
+        
+        // Check for exact match or case-insensitive match
+        return courseSchool === filterSchoolValue || 
+               courseSchool?.toLowerCase() === filterSchoolValue?.toLowerCase();
+      });
+      
+      console.log('After filtering:', filtered.length, 'courses');
     }
 
     // Apply department filter
@@ -2094,7 +2115,96 @@ const Courses = () => {
                 />
               </Grid>
               
-              {/* School filter removed for instructors */}
+              {/* School filter - only visible for admin users */}
+              {user?.role === 'admin' && (
+                <Grid item xs={12} sm={6} md={3} lg={2}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>School</InputLabel>
+                    <Select
+                      value={filterSchool}
+                      onChange={(e) => {
+                        const selectedSchool = e.target.value;
+                        console.log('Selected school:', selectedSchool);
+                        setFilterSchool(selectedSchool);
+                        // Reset department filter when school changes
+                        setFilterDepartment('');
+                        // Reset to first page when filter changes
+                        setPage(0);
+                        
+                        // Force re-filtering by updating filteredCourses directly
+                        if (courses) {
+                          let newFiltered = [...courses];
+                          
+                          // Apply school filter immediately if selected
+                          if (selectedSchool) {
+                            newFiltered = newFiltered.filter(course => {
+                              console.log('Course school check:', course.title, course.school, selectedSchool);
+                              return course.school === selectedSchool;
+                            });
+                          }
+                          
+                          // Re-apply any existing filters
+                          if (filterValue) {
+                            const searchTerm = filterValue.toLowerCase();
+                            newFiltered = newFiltered.filter(course =>
+                              course.title?.toLowerCase().includes(searchTerm) ||
+                              course.code?.toLowerCase().includes(searchTerm) ||
+                              course.department?.toLowerCase().includes(searchTerm) ||
+                              course.instructor?.name?.toLowerCase().includes(searchTerm)
+                            );
+                          }
+                          
+                          if (filterDepartment) {
+                            newFiltered = newFiltered.filter(course => course.department === filterDepartment);
+                          }
+                          
+                          if (filterStatus) {
+                            // Apply status filter logic
+                            if (filterStatus === 'pending') {
+                              newFiltered = newFiltered.filter(course => 
+                                course.status === 'pending' || 
+                                course.status === 'dean-review' ||
+                                course.status === 'department-head-review'
+                              );
+                            } else if (filterStatus === 'approved') {
+                              newFiltered = newFiltered.filter(course => 
+                                course.status === 'department-head-approved' || 
+                                course.status === 'dean-approved' || 
+                                course.status === 'approved' ||
+                                course.status === 'vice-director-approved' || 
+                                course.status === 'scientific-director-approved' || 
+                                course.status === 'finance-approved'
+                              );
+                            } else if (filterStatus === 'rejected') {
+                              newFiltered = newFiltered.filter(course => 
+                                course.status === 'department-head-rejected' || 
+                                course.status === 'dean-rejected' || 
+                                course.status === 'rejected' ||
+                                course.status === 'vice-director-rejected' || 
+                                course.status === 'scientific-director-rejected' || 
+                                course.status === 'finance-rejected'
+                              );
+                            } else if (filterStatus === 'unassigned') {
+                              newFiltered = newFiltered.filter(course => !course.instructor);
+                            }
+                          }
+                          
+                          setFilteredCourses(newFiltered);
+                        }
+                      }}
+                      label="School"
+                      sx={{ borderRadius: 1.5 }}
+                    >
+                      <MenuItem value="">All Schools</MenuItem>
+                      {Object.keys(departments).map((school) => (
+                        <MenuItem key={school} value={school}>
+                          {school}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
 
               {/* Department filter - inline */}
               <Grid item xs={12} sm={6} md={3} lg={2.5}>
@@ -2102,13 +2212,83 @@ const Courses = () => {
                   <InputLabel>Department</InputLabel>
                   <Select
                     value={filterDepartment}
-                    onChange={(e) => setFilterDepartment(e.target.value)}
+                    onChange={(e) => {
+                      const selectedDept = e.target.value;
+                      console.log('Selected department:', selectedDept);
+                      setFilterDepartment(selectedDept);
+                      setPage(0); // Reset to first page when filter changes
+                      
+                      // Force re-filtering by updating filteredCourses directly
+                      if (courses) {
+                        let newFiltered = [...courses];
+                        
+                        // Apply school filter if selected
+                        if (filterSchool) {
+                          newFiltered = newFiltered.filter(course => course.school === filterSchool);
+                        }
+                        
+                        // Apply department filter if selected
+                        if (selectedDept) {
+                          newFiltered = newFiltered.filter(course => course.department === selectedDept);
+                        }
+                        
+                        // Re-apply other existing filters
+                        if (filterValue) {
+                          const searchTerm = filterValue.toLowerCase();
+                          newFiltered = newFiltered.filter(course =>
+                            course.title?.toLowerCase().includes(searchTerm) ||
+                            course.code?.toLowerCase().includes(searchTerm) ||
+                            course.department?.toLowerCase().includes(searchTerm) ||
+                            course.instructor?.name?.toLowerCase().includes(searchTerm)
+                          );
+                        }
+                        
+                        if (filterStatus) {
+                          // Apply status filter logic (same as in school filter)
+                          if (filterStatus === 'pending') {
+                            newFiltered = newFiltered.filter(course => 
+                              course.status === 'pending' || 
+                              course.status === 'dean-review' ||
+                              course.status === 'department-head-review'
+                            );
+                          } else if (filterStatus === 'approved') {
+                            newFiltered = newFiltered.filter(course => 
+                              course.status === 'department-head-approved' || 
+                              course.status === 'dean-approved' || 
+                              course.status === 'approved' ||
+                              course.status === 'vice-director-approved' || 
+                              course.status === 'scientific-director-approved' || 
+                              course.status === 'finance-approved'
+                            );
+                          } else if (filterStatus === 'rejected') {
+                            newFiltered = newFiltered.filter(course => 
+                              course.status === 'department-head-rejected' || 
+                              course.status === 'dean-rejected' || 
+                              course.status === 'rejected' ||
+                              course.status === 'vice-director-rejected' || 
+                              course.status === 'scientific-director-rejected' || 
+                              course.status === 'finance-rejected'
+                            );
+                          } else if (filterStatus === 'unassigned') {
+                            newFiltered = newFiltered.filter(course => !course.instructor);
+                          }
+                        }
+                        
+                        setFilteredCourses(newFiltered);
+                      }
+                    }}
                     label="Department"
                     sx={{ borderRadius: 1.5 }}
                   >
                     <MenuItem value="">All Departments</MenuItem>
-                    {/* Only show departments from instructor's school */}
-                    {user?.role === 'instructor' && user?.school && departments[user.school] ? (
+                    {/* For admin users with school selected, show only departments from that school */}
+                    {user?.role === 'admin' && filterSchool ? (
+                      // Show departments from selected school
+                      departments[filterSchool]?.map((dept) => (
+                        <MenuItem key={dept} value={dept}>{dept}</MenuItem>
+                      ))
+                    ) : user?.role === 'instructor' && user?.school && departments[user.school] ? (
+                      // For instructors, show departments from their school
                       departments[user.school].map((dept) => (
                         <MenuItem key={dept} value={dept}>{dept}</MenuItem>
                       ))
@@ -2174,8 +2354,10 @@ const Courses = () => {
                   variant="outlined"
                   onClick={() => {
                     setFilterValue('');
+                    setFilterSchool('');
                     setFilterDepartment('');
                     setFilterStatus('');
+                    setPage(0); // Reset to first page
                   }}
                   color="secondary"
                   startIcon={<RefreshIcon />}

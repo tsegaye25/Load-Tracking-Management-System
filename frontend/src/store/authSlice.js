@@ -73,9 +73,16 @@ export const updateUser = createAsyncThunk(
       };
 
       // Convert hour fields to numbers
-      if (userData.hdpHour) userData.hdpHour = Number(userData.hdpHour);
-      if (userData.positionHour) userData.positionHour = Number(userData.positionHour);
-      if (userData.batchAdvisor) userData.batchAdvisor = Number(userData.batchAdvisor);
+      if (userData.hdpHour !== undefined) userData.hdpHour = Number(userData.hdpHour);
+      if (userData.positionHour !== undefined) userData.positionHour = Number(userData.positionHour);
+      if (userData.batchAdvisor !== undefined) userData.batchAdvisor = Number(userData.batchAdvisor);
+
+      // Remove password fields if they're empty
+      if (userData.password === '') delete userData.password;
+      if (userData.passwordConfirm === '') delete userData.passwordConfirm;
+
+      // Log the data being sent to the server for debugging
+      console.log('Updating user with data:', { id, userData });
 
       const { data } = await axios.patch(
         `${baseURL}/api/v1/users/${id}`,
@@ -83,9 +90,13 @@ export const updateUser = createAsyncThunk(
         config
       );
 
-      // Update users list
+      // Log the response from the server
+      console.log('Server response:', data);
+
+      // Return the updated user with the ID to ensure proper state update
       return data.data.user;
     } catch (error) {
+      console.error('Update user error:', error.response || error);
       return rejectWithValue(error.response?.data?.message || 'Failed to update user');
     }
   }
@@ -182,8 +193,22 @@ const authSlice = createSlice({
       })
       .addCase(updateUser.fulfilled, (state, { payload }) => {
         state.loading = false;
-        state.users = state.users.map(user => user.id === payload.id ? payload : user);
-        toast.success('User updated successfully!');
+        
+        // Make sure payload is properly defined before updating state
+        if (payload && payload._id) {
+          // Fix: Use _id instead of id for matching users
+          state.users = state.users.map(user => {
+            if (user._id === payload._id) {
+              console.log('Updating user in state:', user._id, '->', payload);
+              return payload;
+            }
+            return user;
+          });
+          toast.success('User updated successfully!');
+        } else {
+          console.error('Invalid payload received:', payload);
+          toast.error('Error updating user: Invalid response from server');
+        }
       })
       .addCase(updateUser.rejected, (state, { payload }) => {
         state.loading = false;
@@ -215,12 +240,37 @@ axios.defaults.baseURL = baseURL;
 export const login = (email, password) => async (dispatch) => {
   try {
     dispatch(setLoading(true));
-    const { data } = await axios.post(`${baseURL}/api/v1/users/login`, { email, password });
+    
+    // Create a custom axios instance for login to avoid polluting console with 401 errors
+    const loginAxios = axios.create();
+    
+    // Custom response interceptor to handle 401 errors silently
+    loginAxios.interceptors.response.use(
+      response => response, // Return successful responses as-is
+      error => {
+        // For 401 errors, we'll handle them silently without console errors
+        if (error.response && error.response.status === 401) {
+          return Promise.reject({
+            response: error.response,
+            silent: true // Mark this error as silent
+          });
+        }
+        // For other errors, pass them through normally
+        return Promise.reject(error);
+      }
+    );
+    
+    const { data } = await loginAxios.post(`${baseURL}/api/v1/users/login`, { email, password });
     dispatch(setCredentials(data));
     toast.success('Login successful!');
     return true;
   } catch (error) {
-    const message = error.response?.data?.message || 'Login failed';
+    // Don't log the error to console if it's marked as silent
+    if (!error.silent) {
+      console.error('Login error:', error);
+    }
+    
+    const message = error.response?.data?.message || 'Incorrect email or password';
     dispatch(setError(message));
     return false;
   } finally {

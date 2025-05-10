@@ -99,7 +99,12 @@ const forgotPassword = catchAsync(async (req, res, next) => {
   const resetURL = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
 
   try {
+    console.log('Creating email instance for password reset...');
     const emailInstance = new Email();
+    
+    console.log('Sending password reset email to:', user.email);
+    console.log('Reset URL:', resetURL);
+    
     await emailInstance.send({
       email: user.email,
       subject: 'Your password reset token (valid for 10 min)',
@@ -107,15 +112,22 @@ const forgotPassword = catchAsync(async (req, res, next) => {
       resetURL
     });
 
+    console.log('Password reset email sent successfully');
     res.status(200).json({
       status: 'success',
       message: 'Token sent to email!'
     });
   } catch (error) {
+    console.error('Error sending password reset email:', error);
+    
+    // Reset the password reset token and expiration
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     await user.save({ validateBeforeSave: false });
-    return next(new AppError('There was an error sending the email. Try again later!', 500));
+    
+    // Provide more detailed error message
+    const errorMessage = `There was an error sending the email: ${error.message}. Please try again later!`;
+    return next(new AppError(errorMessage, 500));
   }
 });
 

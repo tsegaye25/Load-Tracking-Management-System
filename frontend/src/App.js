@@ -249,6 +249,7 @@ const App = () => {
               />
             </>
           )}
+    
           <Route
             path="/profile"
             element={

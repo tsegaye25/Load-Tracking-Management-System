@@ -1,4 +1,8 @@
 const nodemailer = require('nodemailer');
+const dotenv = require('dotenv');
+
+// Load environment variables
+dotenv.config({ path: './config.env' });
 
 class Email {
     constructor() {
@@ -13,80 +17,95 @@ class Email {
     }
 
     async send(options) {
-      // Create HTML template for reset password
-      const htmlTemplate = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            .container {
-              padding: 20px;
-              font-family: Arial, sans-serif;
-              max-width: 600px;
-              margin: 0 auto;
-            }
-            .header {
-              background-color: #1976d2;
-              color: white;
-              padding: 20px;
-              text-align: center;
-              border-radius: 5px 5px 0 0;
-            }
-            .content {
-              padding: 20px;
-              background-color: #f5f5f5;
-              border: 1px solid #ddd;
-            }
-            .button {
-              display: inline-block;
-              padding: 12px 24px;
-              background-color: #1976d2;
-              color: white;
-              text-decoration: none;
-              border-radius: 4px;
-              margin: 20px 0;
-            }
-            .footer {
-              text-align: center;
-              padding: 20px;
-              font-size: 12px;
-              color: #666;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h2>Reset Your Password</h2>
-            </div>
-            <div class="content">
-              <p>Hello,</p>
-              <p>You are receiving this email because you requested to reset your password for your LTMS account.</p>
-              <p>Click the button below to reset your password. This link is valid for 10 minutes.</p>
-              <div style="text-align: center;">
-                <a href="${options.resetURL}" class="button" style="color: white;">Reset Password</a>
+      try {
+        // Validate required options
+        if (!options.email || !options.subject) {
+          throw new Error('Email and subject are required for sending emails');
+        }
+
+        // Create HTML template for reset password
+        const htmlTemplate = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              .container {
+                padding: 20px;
+                font-family: Arial, sans-serif;
+                max-width: 600px;
+                margin: 0 auto;
+              }
+              .header {
+                background-color: #1976d2;
+                color: white;
+                padding: 20px;
+                text-align: center;
+                border-radius: 5px 5px 0 0;
+              }
+              .content {
+                padding: 20px;
+                background-color: #f5f5f5;
+                border: 1px solid #ddd;
+              }
+              .button {
+                display: inline-block;
+                padding: 12px 24px;
+                background-color: #1976d2;
+                color: white;
+                text-decoration: none;
+                border-radius: 4px;
+                margin: 20px 0;
+              }
+              .footer {
+                text-align: center;
+                padding: 20px;
+                font-size: 12px;
+                color: #666;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h2>Reset Your Password</h2>
               </div>
-              <p>If you didn't request a password reset, please ignore this email or contact support if you have concerns.</p>
-              <p>Best regards,<br>LTMS Team</p>
+              <div class="content">
+                <p>Hello,</p>
+                <p>You are receiving this email because you requested to reset your password for your LTMS account.</p>
+                <p>Click the button below to reset your password. This link is valid for 10 minutes.</p>
+                <div style="text-align: center;">
+                  <a href="${options.resetURL}" class="button" style="color: white;">Reset Password</a>
+                </div>
+                <p>If you didn't request a password reset, please ignore this email or contact support if you have concerns.</p>
+                <p>Best regards,<br>LTMS Team</p>
+              </div>
+              <div class="footer">
+                <p>This is an automated message, please do not reply to this email.</p>
+                <p> ${new Date().getFullYear()} Load Tracking Management System - Dire Dawa University</p>
+              </div>
             </div>
-            <div class="footer">
-              <p>This is an automated message, please do not reply to this email.</p>
-              <p> ${new Date().getFullYear()} Load Tracking Management System - Dire Dawa University</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
+          </body>
+          </html>
+        `;
 
-      const mailOptions = {
-        from: 'Tsegsh load tracking system <tdrag301@ltms.io>',
-        to: options.email,
-        subject: options.subject,
-        html: htmlTemplate,
-        text: options.message // Keeping the text version as fallback
-      };
+        // Configure email options
+        const mailOptions = {
+          from: process.env.EMAIL_FROM || 'Tsegsh load tracking system <tdrag301@ltms.io>',
+          to: options.email,
+          subject: options.subject,
+          html: htmlTemplate,
+          text: options.message || 'Please use an HTML-compatible email client to view this message.' // Fallback text
+        };
 
-      await this.transporter.sendMail(mailOptions);
+        // Send the email
+        console.log('Attempting to send email to:', options.email);
+        const info = await this.transporter.sendMail(mailOptions);
+        console.log('Email sent successfully. Message ID:', info.messageId);
+        return info;
+      } catch (error) {
+        console.error('Error sending email:', error);
+        throw new Error(`Failed to send email: ${error.message}`);
+      }
     }
 
     async sendPaymentNotification(options) {
