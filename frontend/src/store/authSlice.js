@@ -81,17 +81,13 @@ export const updateUser = createAsyncThunk(
       if (userData.password === '') delete userData.password;
       if (userData.passwordConfirm === '') delete userData.passwordConfirm;
 
-      // Log the data being sent to the server for debugging
-      console.log('Updating user with data:', { id, userData });
-
+     
       const { data } = await axios.patch(
         `${baseURL}/api/v1/users/${id}`,
         userData,
         config
       );
 
-      // Log the response from the server
-      console.log('Server response:', data);
 
       // Return the updated user with the ID to ensure proper state update
       return data.data.user;
@@ -199,7 +195,6 @@ const authSlice = createSlice({
           // Fix: Use _id instead of id for matching users
           state.users = state.users.map(user => {
             if (user._id === payload._id) {
-              console.log('Updating user in state:', user._id, '->', payload);
               return payload;
             }
             return user;

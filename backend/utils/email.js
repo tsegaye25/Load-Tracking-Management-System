@@ -98,9 +98,7 @@ class Email {
         };
 
         // Send the email
-        console.log('Attempting to send email to:', options.email);
         const info = await this.transporter.sendMail(mailOptions);
-        console.log('Email sent successfully. Message ID:', info.messageId);
         return info;
       } catch (error) {
         console.error('Error sending email:', error);

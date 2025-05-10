@@ -260,16 +260,6 @@ const CourseCard = ({ course, onEdit, onDelete, onAssign, onSelfAssign, onApprov
   // This ensures we always show the correct rejection reason
   rejectionReason = course.rejectionReason || 'No reason provided';
   
-  // For debugging
-  if (course.status.includes('rejected')) {
-    console.log(`Course ${course.code} rejection info:`, {
-      status: course.status,
-      reason: course.rejectionReason,
-      rejectedBy: course.rejectedBy,
-      deanRejectionDate: course.deanRejectionDate
-    });
-  }
-  
   // Get rejector role
   const rejectorRole = getRejectorRole(course.rejectedBy, course.status);
                     
@@ -1019,12 +1009,9 @@ const Courses = () => {
 
     // Apply school filter with improved handling
     if (filterSchool) {
-      console.log('Filtering by school:', filterSchool);
-      console.log('Before filtering:', filtered.length, 'courses');
       
       // Log all available schools in the dataset
       const availableSchools = [...new Set(filtered.map(course => course.school))];
-      console.log('Available schools in dataset:', availableSchools);
       
       filtered = filtered.filter(course => {
         // Handle potential case sensitivity or whitespace issues
@@ -1032,14 +1019,12 @@ const Courses = () => {
         const filterSchoolValue = filterSchool?.trim();
         
         // Log each course being checked
-        console.log('Course:', course.title || course.code, 'School:', courseSchool);
         
         // Check for exact match or case-insensitive match
         return courseSchool === filterSchoolValue || 
                courseSchool?.toLowerCase() === filterSchoolValue?.toLowerCase();
       });
       
-      console.log('After filtering:', filtered.length, 'courses');
     }
 
     // Apply department filter
@@ -2124,7 +2109,6 @@ const Courses = () => {
                       value={filterSchool}
                       onChange={(e) => {
                         const selectedSchool = e.target.value;
-                        console.log('Selected school:', selectedSchool);
                         setFilterSchool(selectedSchool);
                         // Reset department filter when school changes
                         setFilterDepartment('');
@@ -2138,7 +2122,6 @@ const Courses = () => {
                           // Apply school filter immediately if selected
                           if (selectedSchool) {
                             newFiltered = newFiltered.filter(course => {
-                              console.log('Course school check:', course.title, course.school, selectedSchool);
                               return course.school === selectedSchool;
                             });
                           }
@@ -2214,7 +2197,6 @@ const Courses = () => {
                     value={filterDepartment}
                     onChange={(e) => {
                       const selectedDept = e.target.value;
-                      console.log('Selected department:', selectedDept);
                       setFilterDepartment(selectedDept);
                       setPage(0); // Reset to first page when filter changes
                       

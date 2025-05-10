@@ -543,7 +543,6 @@ exports.getSchoolCourses = catchAsync(async (req, res, next) => {
     requestedBy: { $exists: true, $ne: null }
   });
 
-  console.log(`Found ${instructorsWithPendingRequests.length} instructors with pending requests`);
 
   // Get all courses in the dean's school with assigned instructors
   // Exclude instructors who have pending course requests
