@@ -25,6 +25,7 @@ import FinanceDashboard from './pages/FinanceDashboard';
 import FinanceCourses from './pages/FinanceCourses';
 import PaymentCalculator from './pages/PaymentCalculator';
 import AdminDashboard from './pages/AdminDashboard';
+import InstructorsHistory from './pages/InstructorsHistory';
 import { useSelector } from 'react-redux';
 import PrivateRoute from './components/PrivateRoute'; // Assuming PrivateRoute is defined in this file
 
@@ -271,6 +272,18 @@ const App = () => {
                 </Layout>
               ) : (
                 <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/instructors-history"
+            element={
+              isAuthenticated && user?.role === 'admin' ? (
+                <Layout>
+                  <InstructorsHistory />
+                </Layout>
+              ) : (
+                <Navigate to="/dashboard" replace />
               )
             }
           />

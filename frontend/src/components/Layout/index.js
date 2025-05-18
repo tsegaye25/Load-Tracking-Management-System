@@ -34,7 +34,8 @@ import {
   LightMode as LightModeIcon,
   ExpandMore as ExpandMoreIcon,
   Person as PersonIcon,
-  MoreVert as MoreVertIcon
+  MoreVert as MoreVertIcon,
+  History as HistoryIcon
 } from '@mui/icons-material';
 import Footer from '../Footer';
 
@@ -348,6 +349,7 @@ const Layout = ({ children }) => {
     { text: 'Admin Dashboard', icon: <Dashboard />, path: '/admin/dashboard', description: 'System overview and statistics' },
     { text: 'Courses', icon: <LibraryBooks />, path: '/courses', description: 'Manage all courses' },
     { text: 'Users', icon: <Group />, path: '/users', description: 'Manage user accounts' },
+    { text: 'Instructors History', icon: <HistoryIcon />, path: '/instructors-history', description: 'View instructors course history' },
     { text: 'Profile', icon: <Person />, path: '/profile', description: 'Your profile settings' },
   ];
 
